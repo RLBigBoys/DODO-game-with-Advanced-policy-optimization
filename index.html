@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>DODO Stack</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- ===== UI OVERLAY ===== -->
+  <div id="ui-overlay">
+    <!-- Top-left: close button -->
+    <button id="btn-close" aria-label="Close">✕</button>
+
+    <!-- Top-center: score -->
+    <div id="score">0</div>
+
+    <!-- Top-right: coin progress bar -->
+    <div id="coin-bar">
+      <span id="coin-text">0 / 350</span>
+      <span id="coin-icon">🪙</span>
+    </div>
+  </div>
+
+  <!-- ===== GAME OVER POPUP ===== -->
+  <div id="gameover-overlay" class="hidden">
+    <div id="gameover-card">
+      <div id="go-reward">+0D</div>
+      <div id="go-coins-icon">🪙🪙🪙</div>
+      <div id="go-title">Додокоины ваши!</div>
+      <div id="go-desc">Мы начислим их после доставки. Дальше можно играть просто так. Новые додокоины будут доступны при заказе в другой день.</div>
+      <button id="btn-restart">Сыграть ещё</button>
+    </div>
+  </div>
+
+  <!-- ===== TAP-TO-START OVERLAY ===== -->
+  <div id="tap-to-start">
+    <div id="tap-text">Нажмите, чтобы начать</div>
+  </div>
+
+  <!-- Three.js from CDN (ES module build) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+  <script type="module" src="game.js"></script>
+</body>
+</html>

@@ -1,0 +1,221 @@
+/* ===== RESET & BASE ===== */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+  background: #8A2BE2;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* ===== UI OVERLAY ===== */
+#ui-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  padding: 18px 16px 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+#ui-overlay > * {
+  pointer-events: auto;
+}
+
+/* Close button */
+#btn-close {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.25);
+  color: #fff;
+  font-size: 20px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+#btn-close:hover {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+/* Score */
+#score {
+  font-size: 72px;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  line-height: 1;
+  transition: transform 0.15s ease;
+  transform-origin: center center;
+}
+
+#score.bump {
+  animation: scoreBump 0.3s ease;
+}
+
+@keyframes scoreBump {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+
+/* Coin bar */
+#coin-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(60, 10, 100, 0.55);
+  border-radius: 20px;
+  padding: 8px 14px;
+  flex-shrink: 0;
+}
+
+#coin-text {
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+#coin-icon {
+  font-size: 20px;
+}
+
+/* ===== TAP TO START ===== */
+#tap-to-start {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+#tap-to-start.hidden {
+  display: none;
+}
+
+#tap-text {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 22px;
+  font-weight: 600;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50%      { opacity: 1;   transform: scale(1.05); }
+}
+
+/* ===== GAME OVER OVERLAY ===== */
+#gameover-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0);
+  transition: background 0.4s ease;
+}
+
+#gameover-overlay.visible {
+  background: rgba(0, 0, 0, 0.65);
+}
+
+#gameover-overlay.hidden {
+  display: none;
+}
+
+/* Card */
+#gameover-card {
+  background: #1e1e24;
+  border-radius: 24px;
+  padding: 32px 28px 28px;
+  width: min(340px, 85vw);
+  text-align: center;
+  transform: translateY(40px);
+  opacity: 0;
+  transition: transform 0.45s ease, opacity 0.45s ease;
+}
+
+#gameover-overlay.visible #gameover-card {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+#go-reward {
+  font-size: 48px;
+  font-weight: 900;
+  background: linear-gradient(135deg, #9B59B6, #3498DB);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 12px;
+}
+
+#go-coins-icon {
+  font-size: 40px;
+  margin-bottom: 16px;
+}
+
+#go-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: #fff;
+  margin-bottom: 10px;
+}
+
+#go-desc {
+  font-size: 13px;
+  color: #aaa;
+  line-height: 1.5;
+  margin-bottom: 24px;
+}
+
+#btn-restart {
+  width: 100%;
+  padding: 16px;
+  border: none;
+  border-radius: 30px;
+  background: #FF6600;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+}
+
+#btn-restart:hover {
+  background: #e65c00;
+}
+
+#btn-restart:active {
+  transform: scale(0.97);
+}
