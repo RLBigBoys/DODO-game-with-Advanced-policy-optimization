@@ -1,6 +1,7 @@
 /**
  * ui.js — In-game UI management (score, coins, game-over popup)
  */
+import { COINS_PER_BLOCK, COINS_TARGET } from './config.js?v=6';
 
 const scoreEl = document.getElementById('score');
 const coinTextEl = document.getElementById('coin-text');
@@ -9,9 +10,6 @@ const goReward = document.getElementById('go-reward');
 const btnRestart = document.getElementById('btn-restart');
 const btnClose = document.getElementById('btn-close');
 const tapStart = document.getElementById('tap-to-start');
-
-const COINS_PER_BLOCK = 5;
-const COINS_TARGET = 350;
 
 let currentScore = 0;
 

@@ -6,29 +6,16 @@
  * clip text naturally when boxes are sliced smaller.
  */
 import * as THREE from 'three';
+import {
+  BLOCK_HEIGHT,
+  INITIAL_SIZE,
+  PERFECT_THRESHOLD,
+  PPU,
+  BOX_VARIANTS,
+} from './config.js?v=6';
 
-// ─── Geometry constants ───
-export const BLOCK_HEIGHT = 0.22;    // thin pizza box
-export const INITIAL_SIZE = 3;       // square top-view
-export const PERFECT_THRESHOLD = 0.1;
-
-// ─── Pixels-per-world-unit for canvas textures ───
-const PPU = 160;
-
-// ─── Pizza box variants: { bg, text, label } ───
-// Colors and labels matched to the reference screenshots
-const BOX_VARIANTS = [
-  { bg: '#8BC34A', text: '#FFFFFF', label: 'DODO KIDS' },     // lime green
-  { bg: '#F48FB1', text: '#FFFFFF', label: 'MARGHERITA' },    // pink
-  { bg: '#F8BBD0', text: '#C2185B', label: 'DODO MIX' },     // light pink, dark text
-  { bg: '#66BB6A', text: '#FFFFFF', label: 'DODO 2023' },     // medium green
-  { bg: '#FDD835', text: '#5D4037', label: 'PERONI' },        // yellow, dark text
-  { bg: '#FF9800', text: '#FFFFFF', label: 'DODO PIZZA' },    // orange
-  { bg: '#64B5F6', text: '#FFFFFF', label: 'DODO KIDS' },     // sky blue
-  { bg: '#FF8A65', text: '#FFFFFF', label: 'HAWAII' },        // coral
-  { bg: '#EF5350', text: '#FFFFFF', label: 'PEPPERONI' },     // red
-  { bg: '#BCAAA4', text: '#4E342E', label: 'FOUR CHEESE' },   // beige, dark text
-];
+// Re-export for any consumers
+export { BLOCK_HEIGHT, INITIAL_SIZE, PERFECT_THRESHOLD };
 
 // Sequential variant index (cycles through palette)
 let variantIndex = 0;

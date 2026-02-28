@@ -10,9 +10,7 @@ import {
     sliceBlock,
     spawnPerfectParticles,
     resetColorSequence,
-    BLOCK_HEIGHT,
-    INITIAL_SIZE,
-} from './block.js';
+} from './block.js?v=6';
 import {
     updateScore,
     showGameOver,
@@ -20,17 +18,15 @@ import {
     resetUI,
     onClose,
     waitForTapToStart,
-} from './ui.js';
-
-// ======================== CONSTANTS ========================
-const BG_COLOR = 0x8A2BE2;
-const MOVE_RANGE = 6;        // how far blocks move off-center
-const BASE_SPEED = 12.0;     // units per second (crossing ~3u in ~0.5s)
-const SPEED_BUMP = 0.05;     // +5% every 10 levels
-const CAMERA_LERP = 0.06;     // camera follow smoothness
-const FALL_GRAVITY = 15;       // gravity for falling pieces (units/s²)
-const FALL_SPIN = 2.5;      // rotation speed for falling pieces
-const PARTICLE_DECAY = 1.8;      // how fast particles fade
+} from './ui.js?v=6';
+import { TowerPhysics } from './physics.js?v=6';
+import {
+    BG_COLOR, MOVE_RANGE, MIN_SPEED, MAX_SPEED, SPEED_BUMP,
+    CAMERA_LERP, CAMERA_FRUSTUM,
+    FALL_GRAVITY, FALL_SPIN, PARTICLE_DECAY,
+    BLOCK_HEIGHT, INITIAL_SIZE,
+    AMBIENT_INTENSITY, DIR_LIGHT_INTENSITY,
+} from './config.js?v=6';
 
 // ======================== STATE ========================
 let scene, camera, renderer;
@@ -38,7 +34,7 @@ let ambientLight, dirLight;
 
 let stack = [];      // list of placed block meshes
 let score = 0;
-let speed = BASE_SPEED;
+let speed = MIN_SPEED + Math.random() * (MAX_SPEED - MIN_SPEED);
 let gameState = 'idle';  // idle | playing | gameover
 let movingBlock = null;
 let moveAxis = 'x';   // alternates each level
@@ -53,6 +49,10 @@ let particles = [];      // { mesh, vel, life }
 // Target camera Y
 let cameraTargetY = 0;
 
+// Tower physics group & simulation
+let towerGroup = null;
+let towerPhysics = null;
+
 // ======================== INIT ========================
 function init() {
     // Scene
@@ -65,16 +65,17 @@ function init() {
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
     document.body.prepend(renderer.domElement);
 
     // Camera (orthographic, ~45° isometric)
     setupCamera();
 
     // Lights
-    ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
+    ambientLight = new THREE.AmbientLight(0xffffff, AMBIENT_INTENSITY);
     scene.add(ambientLight);
 
-    dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
+    dirLight = new THREE.DirectionalLight(0xffffff, DIR_LIGHT_INTENSITY);
     dirLight.position.set(5, 10, 7);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.set(1024, 1024);
@@ -103,10 +104,9 @@ function init() {
 
 function setupCamera() {
     const aspect = window.innerWidth / window.innerHeight;
-    const frustum = 6;
     camera = new THREE.OrthographicCamera(
-        -frustum * aspect, frustum * aspect,
-        frustum, -frustum,
+        -CAMERA_FRUSTUM * aspect, CAMERA_FRUSTUM * aspect,
+        CAMERA_FRUSTUM, -CAMERA_FRUSTUM,
         0.1, 100
     );
     // Position camera for ~45° isometric view
@@ -116,11 +116,10 @@ function setupCamera() {
 
 function onResize() {
     const aspect = window.innerWidth / window.innerHeight;
-    const frustum = 6;
-    camera.left = -frustum * aspect;
-    camera.right = frustum * aspect;
-    camera.top = frustum;
-    camera.bottom = -frustum;
+    camera.left = -CAMERA_FRUSTUM * aspect;
+    camera.right = CAMERA_FRUSTUM * aspect;
+    camera.top = CAMERA_FRUSTUM;
+    camera.bottom = -CAMERA_FRUSTUM;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
 }
@@ -132,15 +131,25 @@ async function startGame() {
     resetUI();
     resetColorSequence();
     score = 0;
-    speed = BASE_SPEED;
+    speed = MIN_SPEED + Math.random() * (MAX_SPEED - MIN_SPEED);
     moveAxis = 'x';
     gameState = 'idle';
     cameraTargetY = 0;
 
+    // Create tower physics group
+    towerGroup = new THREE.Group();
+    scene.add(towerGroup);
+    towerPhysics = new TowerPhysics(towerGroup);
+    // DEBUG: expose for console inspection
+    window._towerGroup = towerGroup;
+    window._towerPhysics = towerPhysics;
+
     // Create base block
     const base = createBlock(INITIAL_SIZE, INITIAL_SIZE);
     base.position.set(0, 0, 0);
-    scene.add(base);
+    base.userData.restX = 0;
+    base.userData.restZ = 0;
+    towerGroup.add(base);
     stack.push(base);
 
     // Wait for tap
@@ -180,21 +189,27 @@ function spawnMovingBlock() {
     const d = prev.userData.depth;
 
     const block = createBlock(w, d);
-    const y = prev.position.y + BLOCK_HEIGHT;
+    // Use world position of the previous block (it's inside towerGroup)
+    const prevWorld = new THREE.Vector3();
+    prev.getWorldPosition(prevWorld);
+    const y = prevWorld.y + BLOCK_HEIGHT;
     block.position.y = y;
 
     // Start off-screen on the current axis
+    // Use rest positions (not physics-displaced) for the non-sliding axis
+    const restX = prev.userData.restX !== undefined ? prev.userData.restX : prev.position.x;
+    const restZ = prev.userData.restZ !== undefined ? prev.userData.restZ : prev.position.z;
     if (moveAxis === 'x') {
         block.position.x = -MOVE_RANGE;
-        block.position.z = prev.position.z;
+        block.position.z = restZ;
     } else {
         block.position.z = -MOVE_RANGE;
-        block.position.x = prev.position.x;
+        block.position.x = restX;
     }
 
     moveDir = 1;
     movingBlock = block;
-    scene.add(block);
+    scene.add(block); // moving block stays in scene (not in towerGroup) until placed
 }
 
 function endGame() {
@@ -229,15 +244,44 @@ function onTap(e) {
 
     // Success! Place the block
     scene.remove(movingBlock); // remove original if still there
-    if (result.placed) {
-        scene.add(result.placed);
-        stack.push(result.placed);
+    const prevBlock = stack[stack.length - 1];
+
+    let placedBlock = result.placed;
+    let cutPieces = result.cut ? [result.cut] : [];
+
+    // ── Cross-axis slice: check the OTHER axis for sway-induced overhang ──
+    if (placedBlock && !result.perfect) {
+        const crossAxis = moveAxis === 'x' ? 'z' : 'x';
+        const crossResult = sliceBlock(placedBlock, prevBlock, crossAxis, scene);
+
+        if (crossResult.gameOver) {
+            // Completely missed on cross-axis too
+            addFallingPiece(placedBlock);
+            cutPieces.forEach(c => { scene.add(c); addFallingPiece(c); });
+            movingBlock = null;
+            setTimeout(() => endGame(), 800);
+            return;
+        }
+
+        placedBlock = crossResult.placed;
+        if (crossResult.cut) cutPieces.push(crossResult.cut);
     }
 
-    // Handle cut piece
-    if (result.cut) {
-        scene.add(result.cut);
-        addFallingPiece(result.cut);
+    if (placedBlock) {
+        towerGroup.add(placedBlock);
+        stack.push(placedBlock);
+
+        // Apply physics impulse
+        towerPhysics.onBlockPlaced(placedBlock, prevBlock, moveAxis);
+
+        // Immediately sync visual positions
+        towerPhysics.update(0);
+    }
+
+    // Handle cut pieces
+    for (const cut of cutPieces) {
+        scene.add(cut);
+        addFallingPiece(cut);
     }
 
     // Perfect match particles
@@ -250,11 +294,16 @@ function onTap(e) {
     score++;
     updateScore(score);
 
-    // Speed increase every 10 levels
-    speed = BASE_SPEED * (1 + SPEED_BUMP * Math.floor(score / 10));
+    // Randomize speed from uniform [MIN_SPEED, MAX_SPEED], then scale up every 10 levels
+    const baseSpeed = MIN_SPEED + Math.random() * (MAX_SPEED - MIN_SPEED);
+    speed = baseSpeed * (1 + SPEED_BUMP * Math.floor(score / 10));
 
-    // Camera target
-    cameraTargetY = result.placed ? result.placed.position.y : cameraTargetY;
+    // Camera target (use world position since block is inside towerGroup)
+    if (result.placed) {
+        const worldPos = new THREE.Vector3();
+        result.placed.getWorldPosition(worldPos);
+        cameraTargetY = worldPos.y;
+    }
 
     // Alternate axis
     moveAxis = moveAxis === 'x' ? 'z' : 'x';
@@ -324,6 +373,25 @@ function updateParticles(dt) {
     }
 }
 
+// ======================== TOWER COLLISION ========================
+const _movingBox = new THREE.Box3();
+const _towerBox = new THREE.Box3();
+const _shrink = new THREE.Vector3(0.05, 0.05, 0.05); // margin to avoid false positives
+
+function checkCollisionWithTower(block) {
+    _movingBox.setFromObject(block);
+    _movingBox.min.add(_shrink);    // shrink slightly inward
+    _movingBox.max.sub(_shrink);
+
+    for (const child of towerGroup.children) {
+        _towerBox.setFromObject(child);
+        if (_movingBox.intersectsBox(_towerBox)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // ======================== ANIMATION LOOP ========================
 let lastTime = 0;
 
@@ -340,6 +408,14 @@ function animate(time) {
         const delta = speed * dt * moveDir;
         movingBlock.position[moveAxis] += delta;
 
+        // Keep moving block aligned with swaying tower on the non-sliding axis
+        const prev = stack[stack.length - 1];
+        if (moveAxis === 'x') {
+            movingBlock.position.z = prev.position.z;
+        } else {
+            movingBlock.position.x = prev.position.x;
+        }
+
         // Reverse at edges
         if (movingBlock.position[moveAxis] > MOVE_RANGE) {
             movingBlock.position[moveAxis] = MOVE_RANGE;
@@ -347,6 +423,13 @@ function animate(time) {
         } else if (movingBlock.position[moveAxis] < -MOVE_RANGE) {
             movingBlock.position[moveAxis] = -MOVE_RANGE;
             moveDir = 1;
+        }
+
+        // Check collision with swaying tower
+        if (checkCollisionWithTower(movingBlock)) {
+            addFallingPiece(movingBlock);
+            movingBlock = null;
+            setTimeout(() => endGame(), 800);
         }
     }
 
@@ -359,6 +442,11 @@ function animate(time) {
     dirLight.position.y = targetY + 10;
     dirLight.target.position.set(0, targetY, 0);
     dirLight.target.updateMatrixWorld();
+
+    // Update tower physics (sway & tilt)
+    if (towerPhysics) {
+        towerPhysics.update(dt);
+    }
 
     // Update falling pieces
     updateFallingPieces(dt);
