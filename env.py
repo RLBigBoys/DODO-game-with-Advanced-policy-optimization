@@ -15,7 +15,7 @@ class GameSimEnvironment(gym.Env):
         super().__init__()
         self.config = config
         self.frame_buffer = deque(maxlen=config.FRAMES_STACK)
-        self.current_step = 0
+        self.t = 0
         
         # Определение пространств действий и наблюдений (Gymnasium)
         self.action_space = gym.spaces.Discrete(config.ACTION_SPACE_SIZE)
@@ -107,7 +107,7 @@ class GameSimEnvironment(gym.Env):
     def reset(self, seed=None, options=None) -> tuple[np.ndarray, dict]:
         """Сброс: рефрешим страницу, кликаем для старта, собираем первые 5 кадров."""
         super().reset(seed=seed) # Инициализирует self.np_random
-        self.current_step = 0
+        self.t = 0
         
         # Обновляем сид для нового эпизода
         if self.current_episode_seed is not None:
@@ -170,24 +170,24 @@ class GameSimEnvironment(gym.Env):
     def _read_game_state(self):
         """Парсит реальный Play state (Game Over) и монеты."""
         try:
-            terminated = self.page.locator("#gameover-overlay").is_visible()
+            terminal_state = self.page.locator("#gameover-overlay").is_visible()
             coins_text = self.page.locator('#coin-text').inner_text()
             coins = int(coins_text.split(' / ')[0].strip())
         except Exception:
-            terminated = False
+            terminal_state = False
             coins = 0
 
         reward = self.config.REWARD_PER_FRAME
-        truncated = self.current_step >= self.config.MAX_STEPS
+        truncated = self.t >= self.config.TIME_HORIZON
         info = {"coins": coins}
-        return reward, terminated, truncated, info
+        return reward, terminal_state, truncated, info
 
     def step_auto(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
         """Для Auto Mode: ждет следующего реального кадра от 60FPS цикла игры."""
-        self.current_step += 1
+        self.t += 1
         
         if action == 1:
-            print(f"  [{self.current_step}] ➡️ Action chosen: CLICK (Drop block)")
+            print(f"  [{self.t}] ➡️ Action chosen: CLICK (Drop block)")
             try:
                 self.page.evaluate("window.executeDropBlock();")
             except Exception:
@@ -203,19 +203,19 @@ class GameSimEnvironment(gym.Env):
         next_frame = self._capture_screenshot(pre_fetched_b64=b64_str)
         self.frame_buffer.append(next_frame)
         
-        reward, terminated, truncated, info = self._read_game_state()
+        reward, terminal_state, truncated, info = self._read_game_state()
         
         obs = np.stack(self.frame_buffer)
         self._save_debug_frames(obs)
         
-        return obs, reward, terminated, truncated, info
+        return obs, reward, terminal_state, truncated, info
 
     def step_manual(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
         """Для Step Mode: Игра заморожена. Мы мануально продвигаем физику на dt."""
-        self.current_step += 1
+        self.t += 1
         
         if action == 1:
-            print(f"  [{self.current_step}] ➡️ Action chosen: CLICK (Drop block)")
+            print(f"  [{self.t}] ➡️ Action chosen: CLICK (Drop block)")
             try:
                 self.page.evaluate("window.executeDropBlock();")
             except Exception:
@@ -230,12 +230,12 @@ class GameSimEnvironment(gym.Env):
         next_frame = self._capture_screenshot(pre_fetched_b64=b64_str)
         self.frame_buffer.append(next_frame)
         
-        reward, terminated, truncated, info = self._read_game_state()
+        reward, terminal_state, truncated, info = self._read_game_state()
         
         obs = np.stack(self.frame_buffer)
         self._save_debug_frames(obs)
         
-        return obs, reward, terminated, truncated, info
+        return obs, reward, terminal_state, truncated, info
         
     def auto_mode(self, agent):
         """
@@ -249,16 +249,16 @@ class GameSimEnvironment(gym.Env):
         try:
             while not done:
                 action = agent.get_action(state)
-                next_state, reward, terminated, truncated, info = self.step(action)
+                next_state, reward, terminal_state, truncated, info = self.step(action)
                 
-                done = terminated or truncated
+                done = terminal_state or truncated
                 state = next_state
                 
                 # Задержка под реальный FPS
                 time.sleep(0.01)
                 
-                if getattr(self, "current_step", 0) % 10 == 0:
-                    print(f"Auto Mode Step {self.current_step}: running...")
+                if getattr(self, "t", 0) % 10 == 0:
+                    print(f"Auto Mode Step {self.t}: running...")
                     
         except KeyboardInterrupt:
             print("\nAuto Mode Interrupted.")

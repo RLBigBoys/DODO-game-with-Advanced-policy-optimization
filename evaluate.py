@@ -27,10 +27,10 @@ def main():
         
         for ep in range(1, num_episodes + 1):
             state, info = env.reset()
-            done = False
+            terminal_state = False
             ep_reward = 0.0
             
-            while not done:
+            while not terminal_state:
                 # Проверяем, перехватываем ли мы ручное закрытие окна
                 try:
                     if getattr(env, 'page', None) and env.page.is_closed():
@@ -89,12 +89,12 @@ def main():
                         action = agent.get_action(state)
                         
                     if auto_mode:
-                        state, reward, terminated, truncated, info = env.step_auto(action)
+                        state, reward, terminal_state, truncated, info = env.step_auto(action)
                     else:
-                        state, reward, terminated, truncated, info = env.step_manual(action)
+                        state, reward, terminal_state, truncated, info = env.step_manual(action)
                         
                     ep_reward += reward
-                    done = terminated or truncated
+                    terminal_state = terminal_state or truncated
                 else:
                     time.sleep(0.05)
                 

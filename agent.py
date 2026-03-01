@@ -62,26 +62,26 @@ class BaseTrainer:
         self.policy = policy
         self.config = config
         
-    def train_step(self, batch) -> None:
+    def train_step(self, trajectory) -> None:
         raise NotImplementedError
 
 class DummyTrainer(BaseTrainer):
     """Пустой тренер для тестов (ничему не обучается)."""
-    def train_step(self, batch) -> None:
+    def train_step(self, trajectory) -> None:
         pass
 
 class ReinforceTrainer(BaseTrainer):
-    def train_step(self, batch) -> None:
+    def train_step(self, trajectory) -> None:
         # TODO: Реализация REINFORCE (Vanilla Policy Gradient)
         pass
 
 class ReinforceBaselineTrainer(BaseTrainer):
-    def train_step(self, batch) -> None:
+    def train_step(self, trajectory) -> None:
         # TODO: Реализация REINFORCE с бейзлайном (Value функция)
         pass
 
 class TrpoTrainer(BaseTrainer):
-    def train_step(self, batch) -> None:
+    def train_step(self, trajectory) -> None:
         # TODO: Реализация Trust Region Policy Optimization (TRPO)
         pass
 
@@ -122,9 +122,9 @@ class Agent:
         """Передает стейт в выбранную политику и получает решение."""
         return self.policy.get_action(state)
         
-    def train_step(self, batch) -> None:
-        """Передает собранный батч в алгоритм обучения обновлять веса политики."""
-        self.trainer.train_step(batch)
+    def train_step(self, trajectory) -> None:
+        """Передает собранную траекторию в алгоритм обучения обновлять веса политики."""
+        self.trainer.train_step(trajectory)
             
     def save(self, filepath: str):
         self.policy.save(filepath)

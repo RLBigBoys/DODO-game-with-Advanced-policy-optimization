@@ -46,15 +46,16 @@ def main():
     episode_count = 0
     auto_mode = True # По умолчанию крутим обучение быстро
     max_episodes = config.MAX_EPISODES # Assuming MAX_EPISODES is defined in RLConfig
+    time_horizon = config.TIME_HORIZON
     
     try:
         while episode_count < max_episodes:
             state, info = env.reset()
-            done = False
+            terminal_state = False
             total_reward = 0.0
-            episode_experience = []  # Список для сбора траектории всего эпизода
+            trajectory = []  # Список для сбора траектории всего эпизода
             
-            while not done:
+            while not terminal_state:
                 # Проверяем, жив ли браузер (если пользователь закрыл окно)
                 try:
                     if getattr(env, 'page', None) and env.page.is_closed():
@@ -118,20 +119,20 @@ def main():
                         action = agent.get_action(state)
                         
                     if auto_mode:
-                        next_state, reward, terminated, truncated, info = env.step_auto(action)
+                        next_state, reward, terminal_state, truncated, info = env.step_auto(action)
                     else:
-                        next_state, reward, terminated, truncated, info = env.step_manual(action)
+                        next_state, reward, terminal_state, truncated, info = env.step_manual(action)
                     
-                    experience = (state, action, reward, next_state, terminated)
-                    episode_experience.append(experience)
+                    experience = (state, action, reward, next_state, terminal_state)
+                    trajectory.append(experience)
                     
                     state = next_state
                     total_reward += reward
-                    done = terminated or truncated
+                    terminal_state = terminal_state or truncated
                     
                     # Когда эпизод завершается, передаем всю собранную траекторию в агента
-                    if done:
-                        agent.train_step(batch=episode_experience)
+                    if terminal_state:
+                        agent.train_step(trajectory=trajectory)
                 else:
                     time.sleep(0.05)
             
