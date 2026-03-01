@@ -45,12 +45,14 @@ def main():
     
     episode_count = 0
     auto_mode = True # По умолчанию крутим обучение быстро
+    max_episodes = config.MAX_EPISODES # Assuming MAX_EPISODES is defined in RLConfig
     
     try:
-        while True:
+        while episode_count < max_episodes:
             state, info = env.reset()
             done = False
             total_reward = 0.0
+            episode_experience = []  # Список для сбора траектории всего эпизода
             
             while not done:
                 # Проверяем, жив ли браузер (если пользователь закрыл окно)
@@ -121,11 +123,15 @@ def main():
                         next_state, reward, terminated, truncated, info = env.step_manual(action)
                     
                     experience = (state, action, reward, next_state, terminated)
-                    agent.train_step(batch=[experience])
+                    episode_experience.append(experience)
                     
                     state = next_state
                     total_reward += reward
                     done = terminated or truncated
+                    
+                    # Когда эпизод завершается, передаем всю собранную траекторию в агента
+                    if done:
+                        agent.train_step(batch=episode_experience)
                 else:
                     time.sleep(0.05)
             
