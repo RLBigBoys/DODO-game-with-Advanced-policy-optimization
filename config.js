@@ -5,6 +5,29 @@
  * block geometry, UI parameters, etc.
  */
 
+// ═══════════════ RL SEEDING ═══════════════
+let _rlSeed = null;
+let _rlPrngState = 0;
+
+window.setRLSeed = function (seed) {
+    if (seed === null || seed === undefined) {
+        _rlSeed = null;
+    } else {
+        _rlSeed = seed;
+        _rlPrngState = seed >>> 0;
+    }
+};
+
+export function rlRandom() {
+    if (_rlSeed === null) {
+        return Math.random();
+    }
+    let t = _rlPrngState += 0x6D2B79F5;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+}
+
 // ═══════════════ SCENE ═══════════════
 export const BG_COLOR = 0x8A2BE2;          // scene background (purple)
 
@@ -25,9 +48,9 @@ export const PERFECT_THRESHOLD = 0.1;      // snap-to-center tolerance
 export const PPU = 160;                    // pixels-per-world-unit for canvas textures
 
 // ═══════════════ BLOCK MOVEMENT ═══════════════
-export const MOVE_RANGE = 6;              // how far blocks slide off-center
-export const MIN_SPEED = 3.5;            // min units per second
-export const MAX_SPEED = 5.0;            // max units per second
+export const MOVE_RANGE = 5;              // how far blocks slide off-center
+export const MIN_SPEED = 7.0;            // min units per second
+export const MAX_SPEED = 10.0;           // max units per second
 export const SPEED_BUMP = 0.05;           // +5 % speed every 10 levels
 
 // ═══════════════ FALLING PIECES ═══════════════

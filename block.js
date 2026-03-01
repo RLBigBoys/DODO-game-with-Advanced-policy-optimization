@@ -12,28 +12,29 @@ import {
   PERFECT_THRESHOLD,
   PPU,
   BOX_VARIANTS,
+  rlRandom
 } from './config.js?v=6';
 
 // Re-export for any consumers
 export { BLOCK_HEIGHT, INITIAL_SIZE, PERFECT_THRESHOLD };
 
 // Sequential variant index (cycles through palette)
-let variantIndex = 0;
+// No longer used, we pick randomly now.
+// let variantIndex = 0;
 
 /**
- * Get next variant in sequence.
+ * Get next variant randomly.
  */
 function nextVariant() {
-  const v = BOX_VARIANTS[variantIndex % BOX_VARIANTS.length];
-  variantIndex++;
-  return v;
+  const index = Math.floor(rlRandom() * BOX_VARIANTS.length);
+  return BOX_VARIANTS[index];
 }
 
 /**
  * Reset variant index on game restart.
  */
 export function resetColorSequence() {
-  variantIndex = 0;
+  // no-op
 }
 
 // ─── Texture creation ───
@@ -237,9 +238,9 @@ export function spawnPerfectParticles(block, scene) {
     );
 
     const vel = new THREE.Vector3(
-      Math.cos(angle) * (2 + Math.random() * 2),
-      1.5 + Math.random() * 2,
-      Math.sin(angle) * (2 + Math.random() * 2)
+      Math.cos(angle) * (2 + rlRandom() * 2),
+      1.5 + rlRandom() * 2,
+      Math.sin(angle) * (2 + rlRandom() * 2)
     );
 
     scene.add(spark);

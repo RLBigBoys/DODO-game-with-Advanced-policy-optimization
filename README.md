@@ -1,44 +1,48 @@
-# DODO Stack Game
+# DODO Stack Game with RL Environment
 
 A complete 3D browser-based clone of the popular "Stack" mobile game, themed with DODO Pizza boxes. Built purely with HTML, CSS, and Three.js — no build tools required.
 
-## Features
-- **3D Physics and Rendering:** Built from scratch using Three.js.
-- **DODO Pizza Branding:** Custom pizza box textures that dynamically clip and adjust when sliced.
-- **Stacking Mechanics:** Perfectly stack boxes for "sparkles", or mistime it and watch the overhang slice off and fall with gravity.
-- **Dynamic Camera:** The isometric camera smoothly pans up as your tower grows.
-- **Progressive Difficulty:** The boxes speed up as your score increases!
+## Как запустить простую игру (без RL)
 
-## How to Play
-
-Since this game uses standard web technologies, you only need a local web server to serve the files (to avoid browser CORS restrictions when loading 3D assets/textures).
-
-### Prerequisites
-Make sure you have [Python](https://www.python.org/downloads/) installed on your computer.
-
-### Running the Game
-1. Open your terminal (Command Prompt, PowerShell, or macOS/Linux Terminal).
-2. Navigate to the directory containing this project.
-3. Start a local Python HTTP server by running this command:
+Чтобы просто поиграть в браузере самому:
+1. Запустите локальный сервер в папке с проектом:
    ```bash
-   python -m http.server 3456
+   python -m http.server 8080
    ```
-4. Open your favorite web browser (Chrome, Firefox, Edge, Safari).
-5. Go to the following address:
-   ```
-   http://localhost:3456
-   ```
+2. Откройте в браузере ссылку `http://localhost:8080`.
 
-### Controls
-Enjoy the game with a single click or tap!
-- **Click or Tap anywhere** on the screen to stop the moving pizza box.
-- Try to perfectly align it with the box below. If you're off, the overhanging piece is sliced off, and your target area for the next box becomes smaller.
-- If you miss the tower entirely, game over!
-- Earn **5 DODO Coins** for every successful placement.
+## Как запустить обучение агента
 
-## Project Structure
-- `index.html` - The main entry point loading Three.js and our custom scripts.
-- `style.css` - UI overlay styles (score, progress bar, game over screen).
-- `game.js` - Main game loop, camera management, WebGL rendering, and tap logic.
-- `block.js` - Pizza box meshes, colors, branding labels, and the slicing engine.
-- `ui.js` - Scoreboard and end-screen logic.
+Для старта тренировки выполните в терминале:
+```bash
+uv run python train.py
+```
+Браузер запустится автоматически. Обучение можно прервать в любой момент нажатием `Ctrl+C` в консоли — веса агента, история и графики будут безопасно сохранены в папку `weights_dir`.
+
+## Как запустить валидацию (Eval)
+
+Для тестирования уже обученного агента:
+```bash
+uv run python evaluate.py
+```
+Скрипт загрузит веса и прогонит игру без сохранения логов и обновления политики.
+
+## Управление симуляцией (Train / Eval)
+
+Когда скрипт откроет браузер, **сделайте клик по его окну**, чтобы оно оказалось в фокусе. Вы можете управлять симуляцией с клавиатуры:
+
+- `a` (**A**uto Mode Toggle) — **Запустить / Поставить на паузу**. Если выключить, то физика игры "заморозится".
+- `s` (**S**tep) — **Сделать один пошаговый кадр**. (Автоматически ставит симуляцию на паузу).
+- `r` (**R**eset) — **Принудительно начать эпизод заново**.
+
+> **Интерактивное вмешательство:** Во время запущенной симуляции в Питоне (даже на паузе), вы можете **кликать мышкой по игровому полю**. Этот клик будет перехвачен и зарегистрирован как "Действие Агента". Таким образом вы можете лично влиять на симуляцию во время обучения или отладки!
+
+## Конфигурация проекта
+
+Система состоит из двух независимых конфигов:
+
+1. `rl_config.py` — **Настройки агента и RL-окружения.** 
+   Здесь включается Headless режим для браузера, настраивается Random Seed для воспроизводимости, количество переданных агенту кадров, гиперпараметры обучения, а также система наград (Rewards).
+   
+2. `config.js` — **Физика и визуальные параметры игры.** 
+   Здесь находятся настройки цветов, скорости вылета блоков, гравитации обломков, освещения камеры и размеров коробок.
