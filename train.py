@@ -15,6 +15,15 @@ def moving_average(a, n=10):
     ret[n:] = ret[n:] - ret[:-n]
     return ret[n - 1:] / n
 
+def set_seed(seed: int):
+    import random
+    import torch
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
 def main():
     parser = argparse.ArgumentParser(description="Training script for DODO RL agent.")
     parser.add_argument(
@@ -31,6 +40,9 @@ def main():
     args = parser.parse_args()
 
     config = RLConfig()
+    
+    if config.RANDOM_SEED is not None:
+        set_seed(config.RANDOM_SEED)
 
     if args.policy is not None:
         config.POLICY_TYPE = args.policy
@@ -71,6 +83,7 @@ def main():
     time_horizon = config.TIME_HORIZON
     
     batch_of_trajectories = []
+    best_ma_reward = -float('inf')
 
     try:
         while episode_count < max_episodes:
@@ -170,6 +183,14 @@ def main():
             episode_rewards.append(total_reward)
             episode_coins.append(coins)
             episode_count += 1
+            
+            # --- Tracker for Best Weights --- #
+            if len(episode_rewards) >= 10:
+                current_ma_reward = moving_average(episode_rewards[-10:], n=10)[0]
+                if current_ma_reward > best_ma_reward:
+                    best_ma_reward = current_ma_reward
+                    best_path = weights_path.replace(".npy", "_best.npy")
+                    agent.save(best_path)
             
             print(f"Episode {len(episode_rewards)} finished. Total Reward: {total_reward:.3f}, Coins: {coins}")
             

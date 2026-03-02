@@ -359,5 +359,8 @@ class Agent:
         print(f"Agent weights saved to {filepath}")
         
     def load(self, filepath: str):
+        if hasattr(self.config, "LOAD_BEST_WEIGHTS") and self.config.LOAD_BEST_WEIGHTS:
+            filepath = filepath.replace(".npy", "_best.npy")
+            
         self.policy.load(filepath)
         print(f"Agent weights loaded from {filepath}")

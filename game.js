@@ -243,7 +243,7 @@ function onTap(e) {
 
 // Expose drop block logic so Python can trigger it cleanly without fake clicks
 window.executeDropBlock = function () {
-    if (gameState !== 'playing' || !movingBlock) return;
+    if (gameState !== 'playing' || !movingBlock) return { dropped: false, success: false, areaRatio: 0, perfect: false };
 
     const prev = stack[stack.length - 1];
     const result = sliceBlock(movingBlock, prev, moveAxis, scene);
@@ -255,7 +255,7 @@ window.executeDropBlock = function () {
 
         // Delay game-over popup slightly so user sees the block fall
         setTimeout(() => endGame(), 800);
-        return;
+        return { dropped: true, success: false, areaRatio: 0, perfect: false };
     }
 
     // Success! Place the block
@@ -276,7 +276,7 @@ window.executeDropBlock = function () {
             cutPieces.forEach(c => { scene.add(c); addFallingPiece(c); });
             movingBlock = null;
             setTimeout(() => endGame(), 800);
-            return;
+            return { dropped: true, success: false, areaRatio: 0, perfect: false };
         }
 
         placedBlock = crossResult.placed;
@@ -319,219 +319,227 @@ window.executeDropBlock = function () {
         const worldPos = new THREE.Vector3();
         result.placed.getWorldPosition(worldPos);
         cameraTargetY = worldPos.y;
-    }
-
-    // Alternate axis
-    moveAxis = moveAxis === 'x' ? 'z' : 'x';
-
-    // Spawn next
-    movingBlock = null;
-    spawnMovingBlock();
-}
-
-// ======================== FALLING PIECES ========================
-function addFallingPiece(mesh) {
-    // Random rotation axis
-    const rotAxis = new THREE.Vector3(
-        (rlRandom() - 0.5),
-        0,
-        (rlRandom() - 0.5)
-    ).normalize();
-
-    fallingPieces.push({
-        mesh,
-        velY: 0,
-        rotAxis,
-        age: 0,
-    });
-}
-
-function updateFallingPieces(dt) {
-    for (let i = fallingPieces.length - 1; i >= 0; i--) {
-        const fp = fallingPieces[i];
-        fp.velY -= FALL_GRAVITY * dt;
-        fp.mesh.position.y += fp.velY * dt;
-        fp.mesh.rotateOnWorldAxis(fp.rotAxis, FALL_SPIN * dt);
-        fp.age += dt;
-
-        // Remove after falling far enough
-        if (fp.age > 2.5) {
-            scene.remove(fp.mesh);
-            fp.mesh.geometry.dispose();
-            fallingPieces.splice(i, 1);
-        }
-    }
-}
-
-// ======================== PARTICLES ========================
-function updateParticles(dt) {
-    for (let i = particles.length - 1; i >= 0; i--) {
-        const p = particles[i];
-        p.life -= dt * PARTICLE_DECAY;
-
-        if (p.life <= 0) {
-            scene.remove(p.mesh);
-            p.mesh.geometry.dispose();
-            p.mesh.material.dispose();
-            particles.splice(i, 1);
-            continue;
+        let areaRatio = 1.0;
+        if (placedBlock && prevBlock) {
+            const prevArea = prevBlock.userData.width * prevBlock.userData.depth;
+            const newArea = placedBlock.userData.width * placedBlock.userData.depth;
+            areaRatio = newArea / prevArea;
         }
 
-        p.mesh.position.x += p.vel.x * dt;
-        p.mesh.position.y += p.vel.y * dt;
-        p.mesh.position.z += p.vel.z * dt;
+        return { dropped: true, success: true, areaRatio: areaRatio, perfect: result.perfect };
 
-        // Gravity on particles
-        p.vel.y -= 6 * dt;
+        // Alternate axis
+        moveAxis = moveAxis === 'x' ? 'z' : 'x';
 
-        // Fade out
-        p.mesh.material.opacity = Math.max(0, p.life);
+        // Spawn next
+        movingBlock = null;
+        spawnMovingBlock();
     }
-}
 
-// ======================== TOWER COLLISION ========================
-const _movingBox = new THREE.Box3();
-const _towerBox = new THREE.Box3();
-const _shrink = new THREE.Vector3(0.05, 0.05, 0.05); // margin to avoid false positives
+    // ======================== FALLING PIECES ========================
+    function addFallingPiece(mesh) {
+        // Random rotation axis
+        const rotAxis = new THREE.Vector3(
+            (rlRandom() - 0.5),
+            0,
+            (rlRandom() - 0.5)
+        ).normalize();
 
-function checkCollisionWithTower(block) {
-    _movingBox.setFromObject(block);
-    _movingBox.min.add(_shrink);    // shrink slightly inward
-    _movingBox.max.sub(_shrink);
-
-    for (const child of towerGroup.children) {
-        _towerBox.setFromObject(child);
-        if (_movingBox.intersectsBox(_towerBox)) {
-            return true;
-        }
+        fallingPieces.push({
+            mesh,
+            velY: 0,
+            rotAxis,
+            age: 0,
+        });
     }
-    return false;
-}
 
-// ======================== ANIMATION LOOP ========================
-let lastTime = performance.now();
+    function updateFallingPieces(dt) {
+        for (let i = fallingPieces.length - 1; i >= 0; i--) {
+            const fp = fallingPieces[i];
+            fp.velY -= FALL_GRAVITY * dt;
+            fp.mesh.position.y += fp.velY * dt;
+            fp.mesh.rotateOnWorldAxis(fp.rotAxis, FALL_SPIN * dt);
+            fp.age += dt;
 
-// Array of promise resolvers waiting for the next frame render
-window._frameWaiters = [];
-
-function updateGameData(dt) {
-    // Move the current block
-    if (movingBlock && gameState === 'playing') {
-        const delta = speed * dt * moveDir;
-        movingBlock.position[moveAxis] += delta;
-
-        // Keep moving block aligned with swaying tower on the non-sliding axis
-        const prev = stack[stack.length - 1];
-        if (moveAxis === 'x') {
-            movingBlock.position.z = prev.position.z;
-        } else {
-            movingBlock.position.x = prev.position.x;
-        }
-
-        // Check if block flew past the tower (agent missed the tap)
-        if (movingBlock.position[moveAxis] > MOVE_RANGE) {
-            addFallingPiece(movingBlock);
-            movingBlock = null;
-            setTimeout(() => endGame(), 800);
+            // Remove after falling far enough
+            if (fp.age > 2.5) {
+                scene.remove(fp.mesh);
+                fp.mesh.geometry.dispose();
+                fallingPieces.splice(i, 1);
+            }
         }
     }
 
-    // Camera follow
-    if (dt > 0) {
-        const targetY = cameraTargetY;
-        camera.position.y += (targetY + 8 - camera.position.y) * CAMERA_LERP;
-        camera.lookAt(0, targetY, 0);
+    // ======================== PARTICLES ========================
+    function updateParticles(dt) {
+        for (let i = particles.length - 1; i >= 0; i--) {
+            const p = particles[i];
+            p.life -= dt * PARTICLE_DECAY;
 
-        // Update shadow light position to follow the tower
-        dirLight.position.y = targetY + 10;
-        dirLight.target.position.set(0, targetY, 0);
-        dirLight.target.updateMatrixWorld();
+            if (p.life <= 0) {
+                scene.remove(p.mesh);
+                p.mesh.geometry.dispose();
+                p.mesh.material.dispose();
+                particles.splice(i, 1);
+                continue;
+            }
+
+            p.mesh.position.x += p.vel.x * dt;
+            p.mesh.position.y += p.vel.y * dt;
+            p.mesh.position.z += p.vel.z * dt;
+
+            // Gravity on particles
+            p.vel.y -= 6 * dt;
+
+            // Fade out
+            p.mesh.material.opacity = Math.max(0, p.life);
+        }
     }
 
-    // Update tower physics (sway & tilt)
-    if (towerPhysics) {
-        towerPhysics.update(dt);
+    // ======================== TOWER COLLISION ========================
+    const _movingBox = new THREE.Box3();
+    const _towerBox = new THREE.Box3();
+    const _shrink = new THREE.Vector3(0.05, 0.05, 0.05); // margin to avoid false positives
+
+    function checkCollisionWithTower(block) {
+        _movingBox.setFromObject(block);
+        _movingBox.min.add(_shrink);    // shrink slightly inward
+        _movingBox.max.sub(_shrink);
+
+        for (const child of towerGroup.children) {
+            _towerBox.setFromObject(child);
+            if (_movingBox.intersectsBox(_towerBox)) {
+                return true;
+            }
+        }
+        return false;
     }
 
-    // Update falling pieces
-    updateFallingPieces(dt);
+    // ======================== ANIMATION LOOP ========================
+    let lastTime = performance.now();
 
-    // Update particles
-    updateParticles(dt);
-}
-
-// Play mode animation loop
-function animate(time) {
-    if (gameState === 'idle') {
-        requestAnimationFrame(animate);
-        return;
-    }
-
-    // if Python is in step-mode (paused), this is true
-    if (window.rlPhysicsFrozen === true) {
-        // Stop the loop completely, Python will manually step via rlManualStep
-        return;
-    }
-
-    const dt = Math.min((time - lastTime) / 1000, 0.05); // cap delta
-    lastTime = time;
-
-    updateGameData(dt);
-    renderer.render(scene, camera);
-
-    // Resolve anyone waiting for this frame (Python auto_mode)
-    const waiters = window._frameWaiters;
+    // Array of promise resolvers waiting for the next frame render
     window._frameWaiters = [];
-    waiters.forEach(resolve => resolve());
 
-    requestAnimationFrame(animate);
-}
+    function updateGameData(dt) {
+        // Move the current block
+        if (movingBlock && gameState === 'playing') {
+            const delta = speed * dt * moveDir;
+            movingBlock.position[moveAxis] += delta;
 
-// ======================== RL INTERFACE ========================
-// Create a small hidden canvas specifically for blazing-fast RL frame extraction
-const rlCanvas = document.createElement('canvas');
-rlCanvas.width = 84;
-rlCanvas.height = 84;
-const rlCtx = rlCanvas.getContext('2d', { willReadFrequently: true });
+            // Keep moving block aligned with swaying tower on the non-sliding axis
+            const prev = stack[stack.length - 1];
+            if (moveAxis === 'x') {
+                movingBlock.position.z = prev.position.z;
+            } else {
+                movingBlock.position.x = prev.position.x;
+            }
 
-window.getRlFrame = function () {
-    // Instantly draw and downsample the main WebGL buffer into our tiny 84x84 canvas
-    rlCtx.drawImage(renderer.domElement, 0, 0, 84, 84);
-    // Export minimal JPEG String
-    return rlCanvas.toDataURL('image/jpeg', 0.6);
-};
+            // Check if block flew past the tower (agent missed the tap)
+            if (movingBlock.position[moveAxis] > MOVE_RANGE) {
+                addFallingPiece(movingBlock);
+                movingBlock = null;
+                setTimeout(() => endGame(), 800);
+            }
+        }
 
-// Auto Mode: Yield execution until the browser's requestAnimationFrame does one naturally timed tick
-window.waitForNextFrame = function () {
-    return new Promise(resolve => {
-        window._frameWaiters.push(resolve);
-    });
-};
+        // Camera follow
+        if (dt > 0) {
+            const targetY = cameraTargetY;
+            camera.position.y += (targetY + 8 - camera.position.y) * CAMERA_LERP;
+            camera.lookAt(0, targetY, 0);
 
-// Step Mode: Completely freeze the loop and take manual control of time and rendering
-window.rlManualStep = function (dt) {
-    window.rlPhysicsFrozen = true; // freeze natural animation loop globally 
-    updateGameData(dt);
-    renderer.render(scene, camera);
-    return window.getRlFrame();
-};
+            // Update shadow light position to follow the tower
+            dirLight.position.y = targetY + 10;
+            dirLight.target.position.set(0, targetY, 0);
+            dirLight.target.updateMatrixWorld();
+        }
 
-window.rlResumeAuto = function () {
-    if (window.rlPhysicsFrozen) {
-        window.rlPhysicsFrozen = false;
-        lastTime = performance.now();
+        // Update tower physics (sway & tilt)
+        if (towerPhysics) {
+            towerPhysics.update(dt);
+        }
+
+        // Update falling pieces
+        updateFallingPieces(dt);
+
+        // Update particles
+        updateParticles(dt);
+    }
+
+    // Play mode animation loop
+    function animate(time) {
+        if (gameState === 'idle') {
+            requestAnimationFrame(animate);
+            return;
+        }
+
+        // if Python is in step-mode (paused), this is true
+        if (window.rlPhysicsFrozen === true) {
+            // Stop the loop completely, Python will manually step via rlManualStep
+            return;
+        }
+
+        const dt = Math.min((time - lastTime) / 1000, 0.05); // cap delta
+        lastTime = time;
+
+        updateGameData(dt);
+        renderer.render(scene, camera);
+
+        // Resolve anyone waiting for this frame (Python auto_mode)
+        const waiters = window._frameWaiters;
+        window._frameWaiters = [];
+        waiters.forEach(resolve => resolve());
+
         requestAnimationFrame(animate);
     }
-}
 
-// ======================== BOOT ========================
-init();
+    // ======================== RL INTERFACE ========================
+    // Create a small hidden canvas specifically for blazing-fast RL frame extraction
+    const rlCanvas = document.createElement('canvas');
+    rlCanvas.width = 84;
+    rlCanvas.height = 84;
+    const rlCtx = rlCanvas.getContext('2d', { willReadFrequently: true });
 
-// --- PYTHON RL INTEGRATION (Optional Interactive Controls) ---
-window.pythonRlAction = null;
-window.addEventListener('keydown', (e) => {
-    const k = e.key.toLowerCase();
-    if (['a', 'r', 's'].includes(k)) {
-        window.pythonRlAction = k; // Store action for Python to poll
+    window.getRlFrame = function () {
+        // Instantly draw and downsample the main WebGL buffer into our tiny 84x84 canvas
+        rlCtx.drawImage(renderer.domElement, 0, 0, 84, 84);
+        // Export minimal JPEG String
+        return rlCanvas.toDataURL('image/jpeg', 0.6);
+    };
+
+    // Auto Mode: Yield execution until the browser's requestAnimationFrame does one naturally timed tick
+    window.waitForNextFrame = function () {
+        return new Promise(resolve => {
+            window._frameWaiters.push(resolve);
+        });
+    };
+
+    // Step Mode: Completely freeze the loop and take manual control of time and rendering
+    window.rlManualStep = function (dt) {
+        window.rlPhysicsFrozen = true; // freeze natural animation loop globally 
+        updateGameData(dt);
+        renderer.render(scene, camera);
+        return window.getRlFrame();
+    };
+
+    window.rlResumeAuto = function () {
+        if (window.rlPhysicsFrozen) {
+            window.rlPhysicsFrozen = false;
+            lastTime = performance.now();
+            requestAnimationFrame(animate);
+        }
     }
-});
+
+    // ======================== BOOT ========================
+    init();
+
+    // --- PYTHON RL INTEGRATION (Optional Interactive Controls) ---
+    window.pythonRlAction = null;
+    window.addEventListener('keydown', (e) => {
+        const k = e.key.toLowerCase();
+        if (['a', 'r', 's'].includes(k)) {
+            window.pythonRlAction = k; // Store action for Python to poll
+        }
+    });
+};
