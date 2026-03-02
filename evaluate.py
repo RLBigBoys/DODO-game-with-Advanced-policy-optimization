@@ -8,7 +8,7 @@ from agent import Agent
 def main():
     config = RLConfig()
     
-    # Принудительно ставим загрузку весов для evaluation скрипта
+    # Force loading weights for the evaluation script
     config.LOAD_FROM_CHECKPOINT = True
     
     env = GameSimEnvironment(config)
@@ -31,7 +31,7 @@ def main():
             ep_reward = 0.0
             
             while not terminal_state:
-                # Проверяем, перехватываем ли мы ручное закрытие окна
+                # Check if the browser window was manually closed
                 try:
                     if getattr(env, 'page', None) and env.page.is_closed():
                         raise KeyboardInterrupt("Browser closed by user")
@@ -40,7 +40,7 @@ def main():
                         raise e
                     pass
                     
-                # ── UI Отрисовка ──
+                # ── UI Rendering ──
                 prob = agent.config.CLICK_PROBABILITY * 100
                 ui_script = f"""try {{
                     const el = document.getElementById('policy-info');
@@ -55,7 +55,7 @@ def main():
                 except Exception:
                     pass
                     
-                # ── Чтение кнопок ──
+                # ── Read keyboard controls ──
                 try:
                     key = env.page.evaluate("window.pythonRlAction;")
                     if key:
@@ -81,7 +81,7 @@ def main():
                 elif key == 's':
                     auto_mode = False
                     
-                # ── Шаги ──
+                # ── Steps ──
                 if auto_mode or key in ['s', 'c']:
                     if key == 'c':
                         action = 1

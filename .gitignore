@@ -57,3 +57,8 @@ learning_data.json
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# custom
+.python-version
+uv.lock
+_pycache_/

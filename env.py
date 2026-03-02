@@ -8,8 +8,8 @@ from playwright.sync_api import sync_playwright
 
 class GameSimEnvironment(gym.Env):
     """
-    Окружение: Подключается к игре через Playwright.
-    Соответствует Gymnasium API.
+    Environment: connects to the browser game via Playwright.
+    Conforms to the Gymnasium API.
     """
     def __init__(self, config: RLConfig):
         super().__init__()
@@ -17,17 +17,17 @@ class GameSimEnvironment(gym.Env):
         self.frame_buffer = deque(maxlen=config.FRAMES_STACK)
         self.t = 0
         
-        # Определение пространств действий и наблюдений (Gymnasium)
+        # Define action and observation spaces (Gymnasium)
         self.action_space = gym.spaces.Discrete(config.ACTION_SPACE_SIZE)
         
-        # Стейт: (FRAMES, HEIGHT, WIDTH, CHANNELS)
+        # State: (FRAMES, HEIGHT, WIDTH, CHANNELS)
         obs_shape = (config.FRAMES_STACK, config.FRAME_HEIGHT, config.FRAME_WIDTH, config.CHANNELS)
         self.observation_space = gym.spaces.Box(low=0, high=255, shape=obs_shape, dtype=np.uint8)
         
-        # Запускаем Playwright
+        # Start Playwright
         print("Starting Playwright to launch the game...")
         self.playwright = sync_playwright().start()
-        # Запускаем Chromium с привязкой к реальным размерам окна и без эмуляции мобильного viewport (которая ломает рендер при ресайзе)
+        # Launch Chromium with real window size and without mobile viewport emulation
         self.browser = self.playwright.chromium.launch(
             headless=config.HEADLESS,
             args=[f'--window-size={config.BROWSER_WIDTH},{config.BROWSER_HEIGHT}']
@@ -35,16 +35,16 @@ class GameSimEnvironment(gym.Env):
         self.context = self.browser.new_context(no_viewport=True)
         self.page = self.context.new_page()
         
-        # Переходим в игру
+        # Navigate to the game
         self.page.goto(config.GAME_URL)
         print("Waiting for game to load...")
-        time.sleep(2) # Ждем прогрузки
+        time.sleep(2)  # Wait for page load
         
         self.current_episode_seed = getattr(self.config, 'RANDOM_SEED', None)
         if self.current_episode_seed is not None:
             self.page.evaluate(f"window.setRLSeed && window.setRLSeed({self.current_episode_seed});")
         
-        # Включаем эксклюзивный режим RL: браузер больше не обновляет себя сам
+        # Enable exclusive RL mode: browser no longer auto-updates itself
         try:
             self.page.evaluate("window.rlMode = true;")
         except Exception:
@@ -58,10 +58,10 @@ class GameSimEnvironment(gym.Env):
         pass
 
     def _capture_screenshot(self, pre_fetched_b64=None) -> np.ndarray:
-        """Делает скриншот актуального холста игры, возвращает 84x84."""
+        """Capture current game canvas screenshot, returns 84x84 frame."""
         import base64
         try:
-            # Аппаратно ускоренное снятие скриншота размером 84x84 через скрытый JS Canvas (< 1ms)
+            # Hardware-accelerated 84x84 screenshot via hidden JS canvas (< 1ms)
             b64_str = pre_fetched_b64 if pre_fetched_b64 else self.page.evaluate("window.getRlFrame()")
             if not b64_str or "," not in b64_str:
                 raise ValueError("Empty or invalid image data")
@@ -69,17 +69,17 @@ class GameSimEnvironment(gym.Env):
             b64_data = b64_str.split(",")[1]
             img_bytes = base64.b64decode(b64_data)
             
-            # Декодируем байты в numpy массив (изображение)
+            # Decode bytes into numpy array (image)
             img_array = np.frombuffer(img_bytes, dtype=np.uint8)
             img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
             
-            # Переводим в RGB, если 3 канала, или сразу в Grayscale (1 канал)
+            # Convert to RGB if 3 channels, or to Grayscale (1 channel)
             if self.config.CHANNELS == 3:
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             else:
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             
-            # Если grayscale 84x84, нужно добавить канал (84, 84, 1)
+            # If grayscale 84x84, add explicit channel dimension (84, 84, 1)
             if self.config.CHANNELS == 1:
                 img = np.expand_dims(img, axis=-1)
                 
@@ -92,24 +92,24 @@ class GameSimEnvironment(gym.Env):
             return np.zeros(shape, dtype=np.uint8)
         
     def _save_debug_frames(self, obs: np.ndarray):
-        """Сохраняет 5 кадров из текущего стейта в папку для дебага."""
+        """Save 5 frames from the current state into the debug directory."""
         if getattr(self.config, 'SAVE_DEBUG_FRAMES', False):
             import os
             os.makedirs(self.config.DEBUG_DIR, exist_ok=True)
             for i in range(self.config.FRAMES_STACK):
                 frame = obs[i]
-                # Возвращаем цвет обратно в BGR для корректного сохранения в OpenCV
+                # Convert color back to BGR for correct saving in OpenCV
                 if self.config.CHANNELS == 3:
                     frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                 filename = os.path.join(self.config.DEBUG_DIR, f"frame_{i}.png")
                 cv2.imwrite(filename, frame)
                                  
     def reset(self, seed=None, options=None) -> tuple[np.ndarray, dict]:
-        """Сброс: рефрешим страницу, кликаем для старта, собираем первые 5 кадров."""
-        super().reset(seed=seed) # Инициализирует self.np_random
+        """Reset: refresh page if needed, click to start, collect first frames."""
+        super().reset(seed=seed)  # Initializes self.np_random
         self.t = 0
         
-        # Обновляем сид для нового эпизода
+        # Update seed for the new episode
         if self.current_episode_seed is not None:
             self.current_episode_seed += 1
             try:
@@ -122,18 +122,18 @@ class GameSimEnvironment(gym.Env):
             is_start_screen = self.page.locator("#tap-to-start").is_visible()
             
             if is_game_over:
-                # Мягкий рестарт без мерцания и полной перезагрузки страницы
+                # Soft restart without full page reload (prevents flicker)
                 self.page.locator("#btn-restart").click(force=True)
                 time.sleep(0.3)
-                # Обязательно кликаем на экран "Tap to Start", чтобы начать игру
+                # Always click on "Tap to Start" to actually start the game
                 self.page.locator("#tap-to-start").click(force=True)
                 time.sleep(0.3)
             elif is_start_screen:
-                # Первый запуск
+                # First launch
                 self.page.locator("#tap-to-start").click(force=True)
                 time.sleep(0.3)
             else:
-                # Если зависли где-то посреди игры (например, по лимиту шагов) - хард ресет
+                # If stuck in the middle of a game (e.g., step limit) - hard reset
                 self.page.reload()
                 time.sleep(1)
                 if self.page.locator("#tap-to-start").is_visible():
@@ -150,7 +150,7 @@ class GameSimEnvironment(gym.Env):
             except Exception:
                 pass
             
-        # Размораживаем физику, если она была заморожена предыдущим эпизодом в Step Mode
+        # Unfreeze physics if it was frozen by a previous episode in Step Mode
         try:
             self.page.evaluate("window.rlResumeAuto && window.rlResumeAuto();")
         except Exception:
@@ -166,13 +166,13 @@ class GameSimEnvironment(gym.Env):
         return state, info
 
     def _get_observation(self) -> np.ndarray:
-        """Склеивает последние кадры из буфера в один 4D тензор состояния агента (state)."""
+        """Stack last frames from buffer into a single 4D agent state tensor."""
         state = np.stack(self.frame_buffer)
         self._save_debug_frames(state)
         return state
         
     def _get_episode_status(self, action: int = 0):
-        """Парсит реальный Play state (Game Over) и монеты."""
+        """Parse game state (Game Over flag) and coin count from the DOM."""
         try:
             terminal_state = self.page.locator("#gameover-overlay").is_visible()
             coins_text = self.page.locator('#coin-text').inner_text()
@@ -181,10 +181,10 @@ class GameSimEnvironment(gym.Env):
             terminal_state = False
             coins = 0
 
-        # Базовая награда за выживание (за каждый кадр)
+        # Base survival reward (per frame)
         reward = self.config.REWARD_PER_FRAME
         
-        # Дополнительная награда за действие "клик"
+        # Extra reward for taking action "click"
         if action == 1:
             reward += self.config.REWARD_PER_CLICK
             
@@ -193,7 +193,7 @@ class GameSimEnvironment(gym.Env):
         return reward, terminal_state, truncated, info
 
     def step_auto(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
-        """Для Auto Mode: ждет следующего реального кадра от 60FPS цикла игры."""
+        """Auto Mode: wait for the next real frame from the 60 FPS game loop."""
         self.t += 1
         
         if action == 1:
@@ -203,7 +203,7 @@ class GameSimEnvironment(gym.Env):
             except Exception:
                 pass
                 
-        # Ждем пока браузер отрендерит ровно 1 кадр и извлекаем его
+        # Wait until browser renders exactly 1 frame and then extract it
         try:
             self.page.evaluate("await window.waitForNextFrame();")
             b64_str = self.page.evaluate("window.getRlFrame();")
@@ -219,7 +219,7 @@ class GameSimEnvironment(gym.Env):
         return state, reward, terminal_state, truncated, info
 
     def step_manual(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
-        """Для Step Mode: Игра заморожена. Мы мануально продвигаем физику на dt."""
+        """Step Mode: physics is frozen and is advanced manually by dt."""
         self.t += 1
         
         if action == 1:
@@ -229,7 +229,7 @@ class GameSimEnvironment(gym.Env):
             except Exception:
                 pass
                 
-        # Прокидываем физику синхронно на фиксированный dt (замороженный режим)
+        # Advance physics synchronously by fixed dt (frozen mode)
         try:
             b64_str = self.page.evaluate(f"window.rlManualStep({self.config.SIMULATION_STEP_DT});")
         except Exception:
@@ -245,8 +245,8 @@ class GameSimEnvironment(gym.Env):
         
     def auto_mode(self, agent):
         """
-        Симуляция двигается сама, запрашивая действия у агента.
-        Идеально для простой демонстрации без внешнего цикла.
+        Simulation runs on its own, querying actions from the agent.
+        Ideal for simple demos without an external training loop.
         """
         print("\n--- Starting AUTO MODE ---")
         state, info = self.reset()
@@ -260,7 +260,7 @@ class GameSimEnvironment(gym.Env):
                 done = terminal_state or truncated
                 state = next_state
                 
-                # Задержка под реальный FPS
+                # Delay to roughly match real-time FPS
                 time.sleep(0.01)
                 
                 if getattr(self, "t", 0) % 10 == 0:
@@ -271,7 +271,7 @@ class GameSimEnvironment(gym.Env):
         print("--- Finished AUTO MODE ---\n")
         
     def close(self):
-        """Закрывает браузер."""
+        """Close browser and stop Playwright."""
         try:
             if hasattr(self, 'browser') and self.browser:
                 self.browser.close()
