@@ -290,7 +290,7 @@ class TrpoTrainer(BaseTrainer):
 
         shs = 0.5 * (step_direction * self._fisher_vector_product(states, old_dist, step_direction)).sum()
         shs = shs.abs() + 1e-8
-        step_size = torch.sqrt(torch.tensor(self.max_kl / shs))
+        step_size = torch.sqrt(self.max_kl / shs)
         full_step = step_direction * step_size
 
         old_params = self._flatten_params()
