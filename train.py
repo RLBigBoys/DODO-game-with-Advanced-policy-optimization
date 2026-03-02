@@ -48,6 +48,8 @@ def main():
     max_episodes = config.MAX_EPISODES # Assuming MAX_EPISODES is defined in RLConfig
     time_horizon = config.TIME_HORIZON
     
+    batch_of_trajectories = []
+
     try:
         while episode_count < max_episodes:
             state, info = env.reset()
@@ -130,9 +132,14 @@ def main():
                     total_reward += reward
                     terminal_state = terminal_state or truncated
                     
-                    # Когда эпизод завершается, передаем всю собранную траекторию в агента
+                    # Когда эпизод завершается, добавляем траекторию в батч
                     if terminal_state:
-                        agent.train_step(trajectory=trajectory)
+                        batch_of_trajectories.append(trajectory)
+                        
+                        # Если накопили достаточно траекторий, делаем шаг обучения
+                        if len(batch_of_trajectories) >= config.TRAJECTORIES_PER_BATCH:
+                            agent.train_step(batch_of_trajectories=batch_of_trajectories)
+                            batch_of_trajectories = []
                 else:
                     time.sleep(0.05)
             

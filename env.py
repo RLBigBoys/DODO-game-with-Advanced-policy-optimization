@@ -160,14 +160,18 @@ class GameSimEnvironment(gym.Env):
         for _ in range(self.config.FRAMES_STACK):
             self.frame_buffer.append(self._capture_screenshot())
         
-        obs = np.stack(self.frame_buffer)
+        state = self._get_observation()
         info = {}
         
-        self._save_debug_frames(obs)
+        return state, info
+
+    def _get_observation(self) -> np.ndarray:
+        """Склеивает последние кадры из буфера в один 4D тензор состояния агента (state)."""
+        state = np.stack(self.frame_buffer)
+        self._save_debug_frames(state)
+        return state
         
-        return obs, info
-        
-    def _read_game_state(self):
+    def _get_episode_status(self):
         """Парсит реальный Play state (Game Over) и монеты."""
         try:
             terminal_state = self.page.locator("#gameover-overlay").is_visible()
@@ -203,12 +207,10 @@ class GameSimEnvironment(gym.Env):
         next_frame = self._capture_screenshot(pre_fetched_b64=b64_str)
         self.frame_buffer.append(next_frame)
         
-        reward, terminal_state, truncated, info = self._read_game_state()
+        reward, terminal_state, truncated, info = self._get_episode_status()
+        state = self._get_observation()
         
-        obs = np.stack(self.frame_buffer)
-        self._save_debug_frames(obs)
-        
-        return obs, reward, terminal_state, truncated, info
+        return state, reward, terminal_state, truncated, info
 
     def step_manual(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
         """Для Step Mode: Игра заморожена. Мы мануально продвигаем физику на dt."""
@@ -230,12 +232,10 @@ class GameSimEnvironment(gym.Env):
         next_frame = self._capture_screenshot(pre_fetched_b64=b64_str)
         self.frame_buffer.append(next_frame)
         
-        reward, terminal_state, truncated, info = self._read_game_state()
+        reward, terminal_state, truncated, info = self._get_episode_status()
+        state = self._get_observation()
         
-        obs = np.stack(self.frame_buffer)
-        self._save_debug_frames(obs)
-        
-        return obs, reward, terminal_state, truncated, info
+        return state, reward, terminal_state, truncated, info
         
     def auto_mode(self, agent):
         """

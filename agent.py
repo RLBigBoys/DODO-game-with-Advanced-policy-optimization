@@ -1,6 +1,21 @@
 import numpy as np
 import random
 from rl_config import RLConfig
+import torch
+import torch.nn as nn
+import torchvision.transforms as transforms
+import torch.nn.functional as F
+
+
+# ==========================================
+#                 NN MODELS
+# ==========================================
+
+# class CNNModel(nn.Module):
+#     def __init__(self, config: RLConfig):
+
+
+#         self.conv1 = nn.Conv2d()
 
 # ==========================================
 #                  POLICIES
@@ -62,26 +77,26 @@ class BaseTrainer:
         self.policy = policy
         self.config = config
         
-    def train_step(self, trajectory) -> None:
+    def train_step(self, batch_of_trajectories) -> None:
         raise NotImplementedError
 
 class DummyTrainer(BaseTrainer):
     """Пустой тренер для тестов (ничему не обучается)."""
-    def train_step(self, trajectory) -> None:
+    def train_step(self, batch_of_trajectories) -> None:
         pass
 
 class ReinforceTrainer(BaseTrainer):
-    def train_step(self, trajectory) -> None:
+    def train_step(self, batch_of_trajectories) -> None:
         # TODO: Реализация REINFORCE (Vanilla Policy Gradient)
         pass
 
 class ReinforceBaselineTrainer(BaseTrainer):
-    def train_step(self, trajectory) -> None:
+    def train_step(self, batch_of_trajectories) -> None:
         # TODO: Реализация REINFORCE с бейзлайном (Value функция)
         pass
 
 class TrpoTrainer(BaseTrainer):
-    def train_step(self, trajectory) -> None:
+    def train_step(self, batch_of_trajectories) -> None:
         # TODO: Реализация Trust Region Policy Optimization (TRPO)
         pass
 
@@ -122,9 +137,9 @@ class Agent:
         """Передает стейт в выбранную политику и получает решение."""
         return self.policy.get_action(state)
         
-    def train_step(self, trajectory) -> None:
-        """Передает собранную траекторию в алгоритм обучения обновлять веса политики."""
-        self.trainer.train_step(trajectory)
+    def train_step(self, batch_of_trajectories) -> None:
+        """Передает собранные траектории в алгоритм обучения обновлять веса политики."""
+        self.trainer.train_step(batch_of_trajectories)
             
     def save(self, filepath: str):
         self.policy.save(filepath)

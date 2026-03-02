@@ -37,7 +37,7 @@ class RLConfig:
     # ── RL Hyperparameters (Placeholder) ──
     LEARNING_RATE = 1e-4
     GAMMA = 0.99
-    BATCH_SIZE = 32
+    TRAJECTORIES_PER_BATCH = 10
     
     # ── Saving & Loading ──
     LOAD_FROM_CHECKPOINT = True
