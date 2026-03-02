@@ -124,11 +124,11 @@ class CNNPolicy(BasePolicy, nn.Module):
 
     def load(self, filepath: str):
         try:
-            state_dict = torch.load(filepath, map_location=self.device)
+            state_dict = torch.load(filepath, map_location=self.device, weights_only=True)
             self.load_state_dict(state_dict)
             self.to(self.device)
-        except FileNotFoundError:
-            pass
+        except Exception as e:
+            print(f"Warning: Could not load weights from {filepath} ({e}). Starting fresh.")
 
 
 # ==========================================
