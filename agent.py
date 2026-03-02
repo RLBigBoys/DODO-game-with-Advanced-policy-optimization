@@ -99,7 +99,7 @@ class CNNPolicy(BasePolicy):
     def __init__(self, config: RLConfig):
         super().__init__(config)
         self.model = CNNModel(self.config)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config.LEARNING_RATE)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config.OPTIMAIZER_LEARNING_RATE)
         
     def get_action(self, state: np.ndarray) -> int:
         state_permuted = torch.as_tensor(state, dtype=torch.float32).permute(0, 3, 1, 2)
@@ -132,7 +132,35 @@ class DummyTrainer(BaseTrainer):
 class ReinforceTrainer(BaseTrainer):
     def train_step(self, batch_of_trajectories) -> None:
         # TODO: Реализация REINFORCE (Vanilla Policy Gradient)
-        pass
+        # trajectory[t] = (state, action, reward)
+        self.policy.optimizer.zero_grad()
+        batch_loss = []
+
+        for traj in batch_of_trajectories:
+            states, actions, rewards = zip(*traj)
+            
+            states_tensor = torch.as_tensor(np.array(states), dtype=torch.float32)
+            states_tensor = states_tensor.permute(0, 1, 4, 2, 3).reshape(len(states), -1, 84, 84)
+            
+            actions_tensor = torch.as_tensor(actions, dtype=torch.int64)
+            
+            logits = self.policy.model(states_tensor)
+            distribution = torch.distributions.Categorical(logits=logits)
+            
+            log_probs = distribution.log_prob(actions_tensor) 
+
+            G = 0
+            for t, r in enumerate(rewards):
+                G += (self.config.GAMMA ** t) * r
+            
+            traj_loss = -G * log_probs.sum()
+            batch_loss.append(traj_loss)
+
+        total_loss = torch.stack(batch_loss).mean()
+        
+        total_loss.backward()
+        self.policy.optimizer.step()
+        
 
 class ReinforceBaselineTrainer(BaseTrainer):
     def train_step(self, batch_of_trajectories) -> None:

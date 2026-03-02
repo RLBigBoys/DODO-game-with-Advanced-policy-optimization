@@ -171,7 +171,7 @@ class GameSimEnvironment(gym.Env):
         self._save_debug_frames(state)
         return state
         
-    def _get_episode_status(self):
+    def _get_episode_status(self, action: int = 0):
         """Парсит реальный Play state (Game Over) и монеты."""
         try:
             terminal_state = self.page.locator("#gameover-overlay").is_visible()
@@ -181,7 +181,13 @@ class GameSimEnvironment(gym.Env):
             terminal_state = False
             coins = 0
 
+        # Базовая награда за выживание (за каждый кадр)
         reward = self.config.REWARD_PER_FRAME
+        
+        # Дополнительная награда за действие "клик"
+        if action == 1:
+            reward += self.config.REWARD_PER_CLICK
+            
         truncated = self.t >= self.config.TIME_HORIZON
         info = {"coins": coins}
         return reward, terminal_state, truncated, info
@@ -207,7 +213,7 @@ class GameSimEnvironment(gym.Env):
         next_frame = self._capture_screenshot(pre_fetched_b64=b64_str)
         self.frame_buffer.append(next_frame)
         
-        reward, terminal_state, truncated, info = self._get_episode_status()
+        reward, terminal_state, truncated, info = self._get_episode_status(action)
         state = self._get_observation()
         
         return state, reward, terminal_state, truncated, info
@@ -232,7 +238,7 @@ class GameSimEnvironment(gym.Env):
         next_frame = self._capture_screenshot(pre_fetched_b64=b64_str)
         self.frame_buffer.append(next_frame)
         
-        reward, terminal_state, truncated, info = self._get_episode_status()
+        reward, terminal_state, truncated, info = self._get_episode_status(action)
         state = self._get_observation()
         
         return state, reward, terminal_state, truncated, info

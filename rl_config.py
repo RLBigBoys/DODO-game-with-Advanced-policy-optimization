@@ -39,12 +39,15 @@ class RLConfig:
     GAMMA = 0.99
     TRAJECTORIES_PER_BATCH = 10
     
+    OPTIMAIZER_LEARNING_RATE = 1e-4
+    
     # ── Saving & Loading ──
     LOAD_FROM_CHECKPOINT = True
     WEIGHTS_DIR = "weights_dir"
     
     # ── Rewards ──
-    REWARD_PER_FRAME = 0.001
+    REWARD_PER_FRAME = 0.1
+    REWARD_PER_CLICK = 5.0
     
     # ── Debugging ──
     SAVE_DEBUG_FRAMES = True
