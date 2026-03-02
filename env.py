@@ -119,34 +119,29 @@ class GameSimEnvironment(gym.Env):
         
         try:
             is_game_over = self.page.locator("#gameover-overlay").is_visible()
-            is_start_screen = self.page.locator("#tap-to-start").is_visible()
             
             if is_game_over:
                 # Soft restart without full page reload (prevents flicker)
                 self.page.locator("#btn-restart").click(force=True)
-                time.sleep(0.3)
-                # Always click on "Tap to Start" to actually start the game
+                
+            # Wait for Tap to Start to become visible (module might still be loading/transitioning)
+            self.page.wait_for_selector("#tap-to-start", state="visible", timeout=5000)
+            
+            # Click it until it disappears (which means the JS listener successfully caught it)
+            start_wait = time.time()
+            while self.page.locator("#tap-to-start").is_visible() and (time.time() - start_wait < 5.0):
                 self.page.locator("#tap-to-start").click(force=True)
-                time.sleep(0.3)
-            elif is_start_screen:
-                # First launch
-                self.page.locator("#tap-to-start").click(force=True)
-                time.sleep(0.3)
-            else:
-                # If stuck in the middle of a game (e.g., step limit) - hard reset
-                self.page.reload()
-                time.sleep(1)
-                if self.page.locator("#tap-to-start").is_visible():
-                    self.page.locator("#tap-to-start").click(force=True)
-                    time.sleep(0.3)
+                time.sleep(0.1)
+                
         except Exception as e:
             print(f"Reset warning: {e}")
             self.page.reload()
-            time.sleep(1)
             try:
-                if self.page.locator("#tap-to-start").is_visible():
+                self.page.wait_for_selector("#tap-to-start", state="visible", timeout=10000)
+                start_wait = time.time()
+                while self.page.locator("#tap-to-start").is_visible() and (time.time() - start_wait < 5.0):
                     self.page.locator("#tap-to-start").click(force=True)
-                    time.sleep(0.3)
+                    time.sleep(0.1)
             except Exception:
                 pass
             

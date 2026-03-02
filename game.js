@@ -125,7 +125,23 @@ function onResize() {
     renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
+function disposeObject(obj) {
+    if (obj.geometry) obj.geometry.dispose();
+    if (obj.material) {
+        if (Array.isArray(obj.material)) {
+            obj.material.forEach(m => m.dispose());
+        } else {
+            obj.material.dispose();
+        }
+    }
+    if (obj.children) {
+        obj.children.forEach(child => disposeObject(child));
+    }
+}
+
 // ======================== GAME FLOW ========================
+let isAnimating = false;
+
 async function startGame() {
     // Clear everything
     resetScene();
@@ -158,7 +174,10 @@ async function startGame() {
 
     gameState = 'playing';
     spawnMovingBlock();
-    animate(performance.now());
+    if (!isAnimating) {
+        isAnimating = true;
+        animate(performance.now());
+    }
 }
 
 function resetScene() {
@@ -166,14 +185,7 @@ function resetScene() {
     while (scene && scene.children.length > 0) {
         const obj = scene.children[0];
         scene.remove(obj);
-        if (obj.geometry) obj.geometry.dispose();
-        if (obj.material) {
-            if (Array.isArray(obj.material)) {
-                obj.material.forEach(m => m.dispose());
-            } else {
-                obj.material.dispose();
-            }
-        }
+        disposeObject(obj);
     }
     stack = [];
     fallingPieces = [];
@@ -366,7 +378,7 @@ function updateFallingPieces(dt) {
         // Remove after falling far enough
         if (fp.age > 2.5) {
             scene.remove(fp.mesh);
-            fp.mesh.geometry.dispose();
+            disposeObject(fp.mesh);
             fallingPieces.splice(i, 1);
         }
     }
@@ -380,8 +392,7 @@ function updateParticles(dt) {
 
         if (p.life <= 0) {
             scene.remove(p.mesh);
-            p.mesh.geometry.dispose();
-            p.mesh.material.dispose();
+            disposeObject(p.mesh);
             particles.splice(i, 1);
             continue;
         }
