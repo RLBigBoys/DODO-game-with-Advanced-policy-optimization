@@ -104,22 +104,7 @@ def main():
                     # If this check failed, most likely the websocket is already dead
                     pass
                     
-                # ── 1. Update UI text on screen ──
-                prob = agent.config.CLICK_PROBABILITY * 100
-                ui_script = f"""try {{
-                    const el = document.getElementById('policy-info');
-                    if (el) {{
-                        el.classList.remove('hidden');
-                        const newText = 'P(Click): {prob:.1f}%';
-                        if (el.innerText !== newText) el.innerText = newText;
-                    }}
-                }} catch(e) {{}}"""
-                try:
-                    env.page.evaluate(ui_script)
-                except Exception:
-                    pass
-                
-                # ── 2. Read keys pressed in the browser (via JS window) ──
+                # ── 1. Read keys pressed in the browser (via JS window) ──
                 try:
                     key = env.page.evaluate("window.pythonRlAction;")
                     if key:

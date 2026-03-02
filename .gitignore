@@ -45,6 +45,7 @@ test-results/
 
 # Project-specific Data & Checkpoints
 weights_dir/
+*weights_dir*/
 debug_frames/
 *.npy
 learning_data.json
