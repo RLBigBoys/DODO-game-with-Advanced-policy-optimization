@@ -11,11 +11,49 @@ import torch.nn.functional as F
 #                 NN MODELS
 # ==========================================
 
-# class CNNModel(nn.Module):
-#     def __init__(self, config: RLConfig):
+class CNNModel(nn.Module):
+    def __init__(self, config: RLConfig):
+        super().__init__()
 
+        self.config = config
 
-#         self.conv1 = nn.Conv2d()
+        output_shape = self.config.ACTION_SPACE_SIZE
+        input_channels = self.config.FRAMES_STACK * self.config.CHANNELS
+
+        self.features = nn.Sequential(
+            nn.Conv2d(input_channels, 32, kernel_size=8, stride= 4), 
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=4, stride=2), 
+            nn.ReLU(),
+            nn.Conv2d(64, 128, kernel_size=3, stride=1), 
+            nn.ReLU(),
+            nn.Flatten(),
+        )
+
+        with torch.no_grad():
+            dummy_input = torch.zeros(1, input_channels, 
+                                     self.config.FRAME_HEIGHT, 
+                                     self.config.FRAME_WIDTH)
+            dummy_out = self.features(dummy_input)
+            self.linear_size = dummy_out.shape[1]
+
+        self.head = nn.Sequential(
+            nn.Linear(self.linear_size, 512),
+            nn.ReLU(),
+            nn.Linear(512, output_shape)
+        )
+
+        self.apply(self._init_weights)
+
+    def forward(self, x):
+        features = self.features(x)
+        return self.head(features)
+
+    def _init_weights(self, m):
+        if isinstance(m, (nn.Conv2d, nn.Linear)):
+            nn.init.orthogonal_(m.weight, gain=np.sqrt(2))
+            nn.init.constant_(m.bias, 0)
+
 
 # ==========================================
 #                  POLICIES
@@ -60,12 +98,18 @@ class CNNPolicy(BasePolicy):
     """Обучаемая политика на основе CNN (Например, PyTorch)."""
     def __init__(self, config: RLConfig):
         super().__init__(config)
-        # TODO: Инициализация нейронной сети (nn.Module)
+        self.model = CNNModel(self.config)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config.LEARNING_RATE)
         
     def get_action(self, state: np.ndarray) -> int:
-        # TODO: Прогон состояния через CNN
-        pass
-
+        state_permuted = torch.as_tensor(state, dtype=torch.float32).permute(0, 3, 1, 2)
+        state_input = state_permuted.reshape(-1, self.config.FRAME_HEIGHT, self.config.FRAME_WIDTH)
+        state_input_simple_batch = state_input.unsqueeze(0)
+        action_logits = self.model(state_input_simple_batch)
+        action_probs = F.softmax(action_logits, dim = 1)
+        action = action_probs.multinomial(num_samples=1).item() 
+        return action
+        
 
 # ==========================================
 #                  TRAINERS

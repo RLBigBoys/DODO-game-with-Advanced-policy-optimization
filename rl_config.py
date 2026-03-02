@@ -25,7 +25,7 @@ class RLConfig:
     
     # ── Agent Architecture ──
     # Выбор политики: "dummy" или "cnn"
-    POLICY_TYPE = "dummy"
+    POLICY_TYPE = "cnn" #"dummy"
     
     # Выбор метода обучения: "dummy", "reinforce", "reinforce_baseline", "trpo"
     TRAIN_METHOD = "dummy"
