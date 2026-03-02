@@ -125,7 +125,8 @@ def main():
                     else:
                         next_state, reward, terminal_state, truncated, info = env.step_manual(action)
                     
-                    experience = (state, action, reward, next_state, terminal_state)
+                    # Формируем опыт только из нужных элементов (без next_state и terminal_state)
+                    experience = (state, action, reward)
                     trajectory.append(experience)
                     
                     state = next_state
