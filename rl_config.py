@@ -28,13 +28,13 @@ class RLConfig:
     POLICY_TYPE = "cnn" #"dummy"
     
     # Выбор метода обучения: "dummy", "reinforce", "reinforce_baseline", "trpo"
-    TRAIN_METHOD = "dummy"
+    TRAIN_METHOD = "reinforce" #"dummy"
     
     # ── Dummy Policy ──
     # Вероятность нажать на экран (клик) — 1%
-    CLICK_PROBABILITY = 0.01 
+    CLICK_PROBABILITY = 0.01
     
-    # ── RL Hyperparameters (Placeholder) ──
+    # ── RL Hyperparameters ──
     LEARNING_RATE = 1e-4
     GAMMA = 0.99
     TRAJECTORIES_PER_BATCH = 10
@@ -42,13 +42,14 @@ class RLConfig:
     OPTIMAIZER_LEARNING_RATE = 1e-4
     
     # ── Saving & Loading ──
-    LOAD_FROM_CHECKPOINT = True
+    LOAD_FROM_CHECKPOINT = False
     WEIGHTS_DIR = "weights_dir"
     
     # ── Rewards ──
     REWARD_PER_FRAME = 0.1
-    REWARD_PER_CLICK = 5.0
+    REWARD_COINS_MULTIPLIER = 1.0
+    REWARD_PLACEMENT_MULTIPLIER = 10.0
     
     # ── Debugging ──
-    SAVE_DEBUG_FRAMES = True
+    SAVE_DEBUG_FRAMES = False
     DEBUG_DIR = "debug_frames"

@@ -171,8 +171,10 @@ class GameSimEnvironment(gym.Env):
         self._save_debug_frames(state)
         return state
         
-    def _get_episode_status(self, action: int = 0):
+    def _get_episode_status(self, drop_info: dict = None):
         """Парсит реальный Play state (Game Over) и монеты."""
+        if drop_info is None:
+            drop_info = {"dropped": False, "areaRatio": 0.0, "perfect": False}
         try:
             terminal_state = self.page.locator("#gameover-overlay").is_visible()
             coins_text = self.page.locator('#coin-text').inner_text()
@@ -184,9 +186,11 @@ class GameSimEnvironment(gym.Env):
         # Базовая награда за выживание (за каждый кадр)
         reward = self.config.REWARD_PER_FRAME
         
-        # Дополнительная награда за действие "клик"
-        if action == 1:
-            reward += self.config.REWARD_PER_CLICK
+        # Дополнительная награда если блок был фактически сброшен
+        if drop_info.get("dropped", False):
+            ratio = drop_info.get("areaRatio", 0.0)
+            reward += self.config.REWARD_PLACEMENT_MULTIPLIER * ratio
+            reward += self.config.REWARD_COINS_MULTIPLIER * coins
             
         truncated = self.t >= self.config.TIME_HORIZON
         info = {"coins": coins}
@@ -196,10 +200,13 @@ class GameSimEnvironment(gym.Env):
         """Для Auto Mode: ждет следующего реального кадра от 60FPS цикла игры."""
         self.t += 1
         
+        drop_info = {"dropped": False, "areaRatio": 0.0, "perfect": False}
         if action == 1:
             print(f"  [{self.t}] ➡️ Action chosen: CLICK (Drop block)")
             try:
-                self.page.evaluate("window.executeDropBlock();")
+                res = self.page.evaluate("window.executeDropBlock();")
+                if isinstance(res, dict):
+                    drop_info = res
             except Exception:
                 pass
                 
@@ -213,7 +220,7 @@ class GameSimEnvironment(gym.Env):
         next_frame = self._capture_screenshot(pre_fetched_b64=b64_str)
         self.frame_buffer.append(next_frame)
         
-        reward, terminal_state, truncated, info = self._get_episode_status(action)
+        reward, terminal_state, truncated, info = self._get_episode_status(drop_info)
         state = self._get_observation()
         
         return state, reward, terminal_state, truncated, info
@@ -222,10 +229,13 @@ class GameSimEnvironment(gym.Env):
         """Для Step Mode: Игра заморожена. Мы мануально продвигаем физику на dt."""
         self.t += 1
         
+        drop_info = {"dropped": False, "areaRatio": 0.0, "perfect": False}
         if action == 1:
             print(f"  [{self.t}] ➡️ Action chosen: CLICK (Drop block)")
             try:
-                self.page.evaluate("window.executeDropBlock();")
+                res = self.page.evaluate("window.executeDropBlock();")
+                if isinstance(res, dict):
+                    drop_info = res
             except Exception:
                 pass
                 
@@ -238,7 +248,7 @@ class GameSimEnvironment(gym.Env):
         next_frame = self._capture_screenshot(pre_fetched_b64=b64_str)
         self.frame_buffer.append(next_frame)
         
-        reward, terminal_state, truncated, info = self._get_episode_status(action)
+        reward, terminal_state, truncated, info = self._get_episode_status(drop_info)
         state = self._get_observation()
         
         return state, reward, terminal_state, truncated, info

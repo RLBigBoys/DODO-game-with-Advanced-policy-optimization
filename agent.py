@@ -149,15 +149,21 @@ class ReinforceTrainer(BaseTrainer):
             
             log_probs = distribution.log_prob(actions_tensor) 
 
+            # В REINFORCE мы считаем discounted return (G_t) для каждого шага t
+            # G_t = r_t + gamma * r_{t+1} + gamma^2 * r_{t+2} ...
+            returns = []
             G = 0
-            for t, r in enumerate(rewards):
-                G += (self.config.GAMMA ** t) * r
+            for r in reversed(rewards):
+                G = r + self.config.GAMMA * G
+                returns.insert(0, G)
             
-            traj_loss = -G * log_probs.sum()
+            returns_tensor = torch.tensor(returns, dtype=torch.float32)
+            
+            # Лосс для траектории = - sum(G_t * log_prob_t)
+            traj_loss = -(returns_tensor * log_probs).sum()
             batch_loss.append(traj_loss)
 
         total_loss = torch.stack(batch_loss).mean()
-        
         total_loss.backward()
         self.policy.optimizer.step()
         

@@ -243,7 +243,7 @@ function onTap(e) {
 
 // Expose drop block logic so Python can trigger it cleanly without fake clicks
 window.executeDropBlock = function () {
-    if (gameState !== 'playing' || !movingBlock) return;
+    if (gameState !== 'playing' || !movingBlock) return { dropped: false, areaRatio: 0, perfect: false };
 
     const prev = stack[stack.length - 1];
     const result = sliceBlock(movingBlock, prev, moveAxis, scene);
@@ -255,7 +255,7 @@ window.executeDropBlock = function () {
 
         // Delay game-over popup slightly so user sees the block fall
         setTimeout(() => endGame(), 800);
-        return;
+        return { dropped: true, areaRatio: 0, perfect: false };
     }
 
     // Success! Place the block
@@ -276,7 +276,7 @@ window.executeDropBlock = function () {
             cutPieces.forEach(c => { scene.add(c); addFallingPiece(c); });
             movingBlock = null;
             setTimeout(() => endGame(), 800);
-            return;
+            return { dropped: true, areaRatio: 0, perfect: false };
         }
 
         placedBlock = crossResult.placed;
@@ -327,6 +327,15 @@ window.executeDropBlock = function () {
     // Spawn next
     movingBlock = null;
     spawnMovingBlock();
+
+    let areaRatio = 1.0;
+    if (placedBlock && prevBlock) {
+        const prevArea = prevBlock.userData.width * prevBlock.userData.depth;
+        const newArea = placedBlock.userData.width * placedBlock.userData.depth;
+        areaRatio = newArea / prevArea;
+    }
+
+    return { dropped: true, areaRatio: areaRatio, perfect: result.perfect };
 }
 
 // ======================== FALLING PIECES ========================
