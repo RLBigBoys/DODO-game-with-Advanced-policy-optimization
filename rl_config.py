@@ -46,7 +46,7 @@ class RLConfig:
     WEIGHTS_DIR = "weights_dir"
     
     # ── Rewards ──
-    REWARD_PER_FRAME = 0.1
+    REWARD_PER_FRAME = 0.001
     REWARD_COINS_MULTIPLIER = 1.0
     REWARD_PLACEMENT_MULTIPLIER = 10.0
     
