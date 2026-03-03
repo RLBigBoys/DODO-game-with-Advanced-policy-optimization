@@ -12,7 +12,7 @@ class RLConfig:
     # Resolution to which we downsample screenshots for the neural network
     FRAME_WIDTH = 84
     FRAME_HEIGHT = 84
-    CHANNELS = 3  # RGB (or 1 for Grayscale)
+    CHANNELS = 1  # RGB (or 1 for Grayscale)
     
     # ── Actions ──
     # Discrete action space:
