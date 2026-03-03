@@ -15,14 +15,18 @@ class GameSimEnvironment(gym.Env):
         super().__init__()
         self.config = config
         self.frame_buffer = deque(maxlen=config.FRAMES_STACK)
+        self.action_buffer = deque(maxlen=config.FRAMES_STACK - 1)
         self.t = 0
         
         # Define action and observation spaces (Gymnasium)
         self.action_space = gym.spaces.Discrete(config.ACTION_SPACE_SIZE)
         
-        # State: (FRAMES, HEIGHT, WIDTH, CHANNELS)
+        # State: contains frames and previous actions
         obs_shape = (config.FRAMES_STACK, config.FRAME_HEIGHT, config.FRAME_WIDTH, config.CHANNELS)
-        self.observation_space = gym.spaces.Box(low=0, high=255, shape=obs_shape, dtype=np.uint8)
+        self.observation_space = gym.spaces.Dict({
+            "frames": gym.spaces.Box(low=0, high=255, shape=obs_shape, dtype=np.uint8),
+            "previous_actions": gym.spaces.Box(low=0, high=config.ACTION_SPACE_SIZE-1, shape=(config.FRAMES_STACK - 1,), dtype=np.float32)
+        })
         
         # Start Playwright
         print("Starting Playwright to launch the game...")
@@ -152,6 +156,10 @@ class GameSimEnvironment(gym.Env):
             pass
         
         self.frame_buffer.clear()
+        self.action_buffer.clear()
+        for _ in range(self.config.FRAMES_STACK - 1):
+            self.action_buffer.append(0)  # default no-click for pre-history
+            
         for _ in range(self.config.FRAMES_STACK):
             self.frame_buffer.append(self._capture_screenshot())
         
@@ -160,10 +168,15 @@ class GameSimEnvironment(gym.Env):
         
         return state, info
 
-    def _get_observation(self) -> np.ndarray:
-        """Stack last frames from buffer into a single 4D agent state tensor."""
-        state = np.stack(self.frame_buffer)
-        self._save_debug_frames(state)
+    def _get_observation(self) -> dict:
+        """Return dict with stacked frames and previous actions."""
+        frames = np.stack(self.frame_buffer)
+        prev_actions = np.array(self.action_buffer, dtype=np.float32)
+        state = {
+            "frames": frames,
+            "previous_actions": prev_actions
+        }
+        self._save_debug_frames(frames)
         return state
         
     def _get_episode_status(self, drop_info: dict = None):
@@ -214,6 +227,7 @@ class GameSimEnvironment(gym.Env):
             
         next_frame = self._capture_screenshot(pre_fetched_b64=b64_str)
         self.frame_buffer.append(next_frame)
+        self.action_buffer.append(action)
         
         reward, terminal_state, truncated, info = self._get_episode_status(drop_info)
         state = self._get_observation()
@@ -242,6 +256,7 @@ class GameSimEnvironment(gym.Env):
             
         next_frame = self._capture_screenshot(pre_fetched_b64=b64_str)
         self.frame_buffer.append(next_frame)
+        self.action_buffer.append(action)
         
         reward, terminal_state, truncated, info = self._get_episode_status(action)
         state = self._get_observation()

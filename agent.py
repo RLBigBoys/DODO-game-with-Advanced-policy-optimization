@@ -25,7 +25,7 @@ class BasePolicy:
     def __init__(self, config: RLConfig):
         self.config = config
         
-    def get_action(self, state: np.ndarray) -> int:
+    def get_action(self, state: dict) -> int:
         raise NotImplementedError
         
     def save(self, filepath: str):
@@ -40,7 +40,7 @@ class BasePolicy:
 
 class DummyPolicy(BasePolicy):
     """Random policy (uniform random clicks)."""
-    def get_action(self, state: np.ndarray) -> int:
+    def get_action(self, state: dict) -> int:
         if random.random() < self.config.CLICK_PROBABILITY:
             return 1  # Click
         return 0
@@ -75,8 +75,14 @@ class CNNPolicy(BasePolicy, nn.Module):
 
         conv_out_size = self._get_conv_out_shape(in_channels, config.FRAME_HEIGHT, config.FRAME_WIDTH)
 
+        num_past_actions = config.FRAMES_STACK - 1
+        self.action_fc = nn.Sequential(
+            nn.Linear(num_past_actions, 16),
+            nn.ReLU()
+        )
+
         self.fc = nn.Sequential(
-            nn.Linear(conv_out_size, 512),
+            nn.Linear(conv_out_size + 16, 512),
             nn.ReLU(),
             nn.Linear(512, config.ACTION_SPACE_SIZE),
         )
@@ -89,31 +95,42 @@ class CNNPolicy(BasePolicy, nn.Module):
             x = self.conv(x)
             return int(np.prod(x.shape[1:]))
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x_frames: torch.Tensor, x_actions: torch.Tensor) -> torch.Tensor:
         """
-        Expect x of shape [B, in_channels, H, W].
+        Expect x_frames of shape [B, in_channels, H, W].
+        Expect x_actions of shape [B, num_past_actions].
         """
-        x = self.conv(x)
-        x = x.view(x.size(0), -1)
-        logits = self.fc(x)
+        x_conv = self.conv(x_frames)
+        x_conv = x_conv.view(x_conv.size(0), -1)
+        
+        x_act = self.action_fc(x_actions)
+        
+        x_combined = torch.cat([x_conv, x_act], dim=1)
+        logits = self.fc(x_combined)
         return logits
 
-    def _preprocess_state(self, state: np.ndarray) -> torch.Tensor:
+    def _preprocess_state(self, state: dict) -> tuple[torch.Tensor, torch.Tensor]:
         """
-        Convert state (FRAMES, H, W, C) into tensor [1, in_channels, H, W].
+        Convert state dict into tensors for frames and actions.
         """
-        s = torch.from_numpy(state).float() / 255.0
+        frames = state["frames"]
+        prev_actions = state["previous_actions"]
+        
+        s = torch.from_numpy(frames).float() / 255.0
         # [F, H, W, C] -> [F, C, H, W] -> [F*C, H, W]
         s = s.permute(0, 3, 1, 2).contiguous()
         f, c, h, w = s.shape
         s = s.view(1, f * c, h, w)
-        return s.to(self.device)
+        
+        a = torch.from_numpy(prev_actions).float().unsqueeze(0)
+        
+        return s.to(self.device), a.to(self.device)
 
-    def get_action(self, state: np.ndarray) -> int:
+    def get_action(self, state: dict) -> int:
         self.eval()
         with torch.no_grad():
-            x = self._preprocess_state(state)
-            logits = self.forward(x)
+            x_frames, x_actions = self._preprocess_state(state)
+            logits = self.forward(x_frames, x_actions)
             probs = F.softmax(logits, dim=-1)
             dist = torch.distributions.Categorical(probs=probs)
             action = dist.sample().item()
@@ -162,12 +179,16 @@ class ReinforceTrainer(BaseTrainer):
         for traj in batch_of_trajectories:
             states, actions, rewards = zip(*traj)
             
-            states_tensor = torch.as_tensor(np.array(states), dtype=torch.float32)
-            states_tensor = states_tensor.permute(0, 1, 4, 2, 3).reshape(len(states), -1, 84, 84)
+            frames_list = [s["frames"] for s in states]
+            prev_actions_list = [s["previous_actions"] for s in states]
             
-            actions_tensor = torch.as_tensor(actions, dtype=torch.int64)
+            states_tensor = torch.as_tensor(np.array(frames_list), dtype=torch.float32)
+            states_tensor = states_tensor.permute(0, 1, 4, 2, 3).reshape(len(states), -1, 84, 84).to(self.policy.device)
             
-            logits = self.policy(states_tensor)
+            prev_actions_tensor = torch.as_tensor(np.array(prev_actions_list), dtype=torch.float32).to(self.policy.device)
+            actions_tensor = torch.as_tensor(actions, dtype=torch.int64).to(self.policy.device)
+            
+            logits = self.policy(states_tensor, prev_actions_tensor)
             distribution = torch.distributions.Categorical(logits=logits)
             
             log_probs = distribution.log_prob(actions_tensor) 
@@ -202,12 +223,16 @@ class ReinforceBaselineTrainer(BaseTrainer):
         for traj in batch_of_trajectories:
             states, actions, rewards = zip(*traj)
             
-            states_tensor = torch.as_tensor(np.array(states), dtype=torch.float32)
-            states_tensor = states_tensor.permute(0, 1, 4, 2, 3).reshape(len(states), -1, 84, 84)
+            frames_list = [s["frames"] for s in states]
+            prev_actions_list = [s["previous_actions"] for s in states]
             
-            actions_tensor = torch.as_tensor(actions, dtype=torch.int64)
+            states_tensor = torch.as_tensor(np.array(frames_list), dtype=torch.float32)
+            states_tensor = states_tensor.permute(0, 1, 4, 2, 3).reshape(len(states), -1, 84, 84).to(self.policy.device)
             
-            logits = self.policy(states_tensor)
+            prev_actions_tensor = torch.as_tensor(np.array(prev_actions_list), dtype=torch.float32).to(self.policy.device)
+            actions_tensor = torch.as_tensor(actions, dtype=torch.int64).to(self.policy.device)
+            
+            logits = self.policy(states_tensor, prev_actions_tensor)
             distribution = torch.distributions.Categorical(logits=logits)
             
             log_probs = distribution.log_prob(actions_tensor) 
@@ -263,17 +288,17 @@ class TrpoTrainer(BaseTrainer):
         grads = torch.autograd.grad(loss, self.policy.parameters(), retain_graph=retain_graph)
         return torch.cat([g.view(-1) for g in grads])
 
-    def _get_dist(self, states: torch.Tensor) -> torch.distributions.Categorical:
-        logits = self.policy(states)
+    def _get_dist(self, states_tuple: tuple[torch.Tensor, torch.Tensor]) -> torch.distributions.Categorical:
+        logits = self.policy(states_tuple[0], states_tuple[1])
         return torch.distributions.Categorical(logits=logits)
 
     def _fisher_vector_product(
         self,
-        states: torch.Tensor,
+        states_tuple: tuple[torch.Tensor, torch.Tensor],
         old_dist: torch.distributions.Categorical,
         v: torch.Tensor,
     ) -> torch.Tensor:
-        kl = torch.distributions.kl_divergence(old_dist, self._get_dist(states)).mean()
+        kl = torch.distributions.kl_divergence(old_dist, self._get_dist(states_tuple)).mean()
         grads = torch.autograd.grad(kl, self.policy.parameters(), create_graph=True)
         flat_grad_kl = torch.cat([g.view(-1) for g in grads])
         kl_v = (flat_grad_kl * v).sum()
@@ -283,7 +308,7 @@ class TrpoTrainer(BaseTrainer):
 
     def _conjugate_gradient(
         self,
-        states: torch.Tensor,
+        states_tuple: tuple[torch.Tensor, torch.Tensor],
         old_dist: torch.distributions.Categorical,
         b: torch.Tensor,
     ) -> torch.Tensor:
@@ -292,7 +317,7 @@ class TrpoTrainer(BaseTrainer):
         p = b.clone()
         rdotr = torch.dot(r, r)
         for _ in range(self.cg_iters):
-            avp = self._fisher_vector_product(states, old_dist, p)
+            avp = self._fisher_vector_product(states_tuple, old_dist, p)
             alpha = rdotr / (torch.dot(p, avp) + 1e-8)
             x += alpha * p
             r -= alpha * avp
@@ -305,7 +330,8 @@ class TrpoTrainer(BaseTrainer):
         return x
 
     def _prepare_batch(self, batch_of_trajectories):
-        states = []
+        states_frames = []
+        states_actions = []
         actions = []
         returns = []
 
@@ -320,16 +346,19 @@ class TrpoTrainer(BaseTrainer):
                 discounted.insert(0, G)
 
             for (state, action, _), ret in zip(trajectory, discounted):
-                states.append(state)
+                states_frames.append(state["frames"])
+                states_actions.append(state["previous_actions"])
                 actions.append(action)
                 returns.append(ret)
 
-        states_np = np.stack(states, axis=0)  # [N, F, H, W, C]
+        states_np = np.stack(states_frames, axis=0)  # [N, F, H, W, C]
         s = torch.from_numpy(states_np).float() / 255.0
         # [N, F, H, W, C] -> [N, F, C, H, W] -> [N, F*C, H, W]
         s = s.permute(0, 1, 4, 2, 3).contiguous()
         n, f, c, h, w = s.shape
         s = s.view(n, f * c, h, w).to(self.policy.device)
+        
+        s_act = torch.tensor(np.stack(states_actions, axis=0), dtype=torch.float32, device=self.policy.device)
 
         actions_t = torch.tensor(actions, dtype=torch.long, device=self.policy.device)
         returns_t = torch.tensor(returns, dtype=torch.float32, device=self.policy.device)
@@ -337,7 +366,7 @@ class TrpoTrainer(BaseTrainer):
         advantages = returns_t - returns_t.mean()
         advantages = advantages / (advantages.std() + 1e-8)
 
-        return s, actions_t, advantages
+        return (s, s_act), actions_t, advantages
 
     def train_step(self, batch_of_trajectories) -> None:
         if not batch_of_trajectories:
@@ -345,14 +374,14 @@ class TrpoTrainer(BaseTrainer):
 
         self.policy.train()
 
-        states, actions, advantages = self._prepare_batch(batch_of_trajectories)
+        states_tuple, actions, advantages = self._prepare_batch(batch_of_trajectories)
 
         with torch.no_grad():
-            old_dist = self._get_dist(states)
+            old_dist = self._get_dist(states_tuple)
             old_log_probs = old_dist.log_prob(actions)
 
         def surrogate_loss():
-            dist = self._get_dist(states)
+            dist = self._get_dist(states_tuple)
             log_probs = dist.log_prob(actions)
             ratio = torch.exp(log_probs - old_log_probs)
             return -(ratio * advantages).mean()
@@ -360,9 +389,9 @@ class TrpoTrainer(BaseTrainer):
         loss = surrogate_loss()
         loss_grad = self._flat_grad(loss)
 
-        step_direction = self._conjugate_gradient(states, old_dist, -loss_grad)
+        step_direction = self._conjugate_gradient(states_tuple, old_dist, -loss_grad)
 
-        shs = 0.5 * (step_direction * self._fisher_vector_product(states, old_dist, step_direction)).sum()
+        shs = 0.5 * (step_direction * self._fisher_vector_product(states_tuple, old_dist, step_direction)).sum()
         shs = shs.abs() + 1e-8
         step_size = torch.sqrt(self.max_kl / shs)
         full_step = step_direction * step_size
@@ -373,7 +402,7 @@ class TrpoTrainer(BaseTrainer):
             new_params = old_params + step
             self._set_flat_params(new_params)
             with torch.no_grad():
-                dist = self._get_dist(states)
+                dist = self._get_dist(states_tuple)
                 kl = torch.distributions.kl_divergence(old_dist, dist).mean()
                 new_loss = surrogate_loss()
             return kl, new_loss
@@ -420,7 +449,7 @@ class Agent:
             raise ValueError(f"Unknown TRAIN_METHOD: {self.config.TRAIN_METHOD}")
         self.trainer = trainer_class(self.policy, config)
 
-    def get_action(self, state: np.ndarray) -> int:
+    def get_action(self, state: dict) -> int:
         """Pass state into the selected policy and return chosen action."""
         return self.policy.get_action(state)
         

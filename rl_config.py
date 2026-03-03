@@ -40,7 +40,7 @@ class RLConfig:
     TRAJECTORIES_PER_BATCH = 10
     
     # ── Saving & Loading ──
-    LOAD_FROM_CHECKPOINT = True
+    LOAD_FROM_CHECKPOINT = False
     LOAD_BEST_WEIGHTS = False    # True = try to load weights_best.npy instead of weights.npy
     WEIGHTS_DIR = "weights_dir"
     
