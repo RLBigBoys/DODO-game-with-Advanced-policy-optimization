@@ -28,7 +28,7 @@ class RLConfig:
     POLICY_TYPE = "cnn"
     
     # Выбор метода обучения: "dummy", "reinforce", "reinforce_baseline", "trpo"
-    TRAIN_METHOD = "trpo"
+    TRAIN_METHOD = "reinforce"
     
     # ── Dummy Policy ──
     # Probability to click on the screen — 1%
@@ -40,7 +40,7 @@ class RLConfig:
     TRAJECTORIES_PER_BATCH = 10
     
     # ── Saving & Loading ──
-    LOAD_FROM_CHECKPOINT = False
+    LOAD_FROM_CHECKPOINT = True
     LOAD_BEST_WEIGHTS = False    # True = try to load weights_best.npy instead of weights.npy
     WEIGHTS_DIR = "weights_dir"
     
