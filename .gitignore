@@ -61,5 +61,4 @@ Thumbs.db
 
 # custom
 .python-version
-uv.lock
 _pycache_/

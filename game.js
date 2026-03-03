@@ -243,7 +243,7 @@ function onTap(e) {
     if (e) e.preventDefault();
 
     // Manual clicks are intercepted for the Python loop if running RL
-    if (e && e.isTrusted && window.pythonRlAction !== undefined) {
+    if (e && e.isTrusted && window.rlMode) {
         window.pythonRlAction = 'c';
         // In RL mode (both auto and manual step), Python will explicitly call window.executeDropBlock() 
         // when it processes the action. Doing it here causes a double-drop.
