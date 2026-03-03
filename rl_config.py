@@ -28,7 +28,7 @@ class RLConfig:
     POLICY_TYPE = "cnn"
     
     # Выбор метода обучения: "dummy", "reinforce", "reinforce_baseline", "trpo"
-    TRAIN_METHOD = "reinforce"
+    TRAIN_METHOD = "reinforce_baseline"
     
     # ── Dummy Policy ──
     # Probability to click on the screen — 1%

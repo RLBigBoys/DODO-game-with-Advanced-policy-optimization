@@ -189,9 +189,49 @@ class ReinforceTrainer(BaseTrainer):
  
 
 class ReinforceBaselineTrainer(BaseTrainer):
+    def __init__(self, policy: BasePolicy, config: RLConfig):
+        super().__init__(policy, config)
+        self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=self.config.LEARNING_RATE)
+        self.baseline = None
+
     def train_step(self, batch_of_trajectories) -> None:
-        # TODO: Implement REINFORCE with baseline (Value function)
-        pass
+        # trajectory[t] = (state, action, reward)
+        self.optimizer.zero_grad()
+        batch_loss = []
+
+        for traj in batch_of_trajectories:
+            states, actions, rewards = zip(*traj)
+            
+            states_tensor = torch.as_tensor(np.array(states), dtype=torch.float32)
+            states_tensor = states_tensor.permute(0, 1, 4, 2, 3).reshape(len(states), -1, 84, 84)
+            
+            actions_tensor = torch.as_tensor(actions, dtype=torch.int64)
+            
+            logits = self.policy(states_tensor)
+            distribution = torch.distributions.Categorical(logits=logits)
+            
+            log_probs = distribution.log_prob(actions_tensor) 
+
+            returns = []
+            G = 0
+            for r in reversed(rewards):
+                G = r + self.config.GAMMA * G
+                returns.insert(0, G)
+
+            if self.baseline is None:
+                self.baseline = np.mean(returns)
+            else:
+                self.baseline = 0.9 * self.baseline + 0.1 * np.mean(returns)
+            
+            returns_tensor = torch.tensor(returns - self.baseline, dtype=torch.float32)
+            
+            traj_loss = -(returns_tensor * log_probs).sum()
+            batch_loss.append(traj_loss)
+
+        total_loss = torch.stack(batch_loss).mean()
+        total_loss.backward()
+        self.optimizer.step()
+ 
 
 class TrpoTrainer(BaseTrainer):
     """
