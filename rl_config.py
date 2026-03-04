@@ -25,7 +25,7 @@ class RLConfig:
     # Policy type: "dummy", "cnn"
     POLICY_TYPE = "cnn"
     
-    # Выбор метода обучения: "dummy", "reinforce", "reinforce_baseline", "trpo", "trpo_value"
+    # Выбор метода обучения: "dummy", "reinforce", "reinforce_baseline", "trpo"
     TRAIN_METHOD = "reinforce"
     
     # ── Dummy Policy ──

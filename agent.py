@@ -446,175 +446,6 @@ class TrpoTrainer(BaseTrainer):
             self._set_flat_params(old_params)
 
 
-class TrpoValueTrainer(BaseTrainer):
-    """
-    TRPO with a Value Function head, Advantage Estimation, and an Entropy bonus.
-    """
-    def __init__(self, policy: BasePolicy, config: RLConfig):
-        super().__init__(policy, config)
-        if not isinstance(self.policy, CNNActorCriticPolicy):
-            raise ValueError("TrpoValueTrainer expects CNNActorCriticPolicy.")
-
-        self.max_kl = 1e-2
-        self.cg_damping = 1e-2
-        self.cg_iters = 10
-        self.backtrack_coeff = 0.8
-        self.backtrack_iters = 10
-        
-        # Optimizer for Value Network (only critic parameters, actor handled by TRPO).
-        self.vf_optimizer = torch.optim.Adam(
-            [p for n, p in self.policy.named_parameters() if 'critic' in n or 'conv' in n or 'action_fc' in n],
-            lr=getattr(self.config, 'LEARNING_RATE', 1e-4) * 10
-        )
-
-    def _flatten_params(self) -> torch.Tensor:
-        actor_params = [p for n, p in self.policy.named_parameters() if 'critic' not in n]
-        return torch.cat([p.data.view(-1) for p in actor_params])
-
-    def _set_flat_params(self, flat_params: torch.Tensor) -> None:
-        actor_params = [p for n, p in self.policy.named_parameters() if 'critic' not in n]
-        idx = 0
-        for p in actor_params:
-            numel = p.numel()
-            p.data.copy_(flat_params[idx : idx + numel].view_as(p))
-            idx += numel
-
-    def _flat_grad(self, loss: torch.Tensor, retain_graph: bool = False) -> torch.Tensor:
-        actor_params = [p for n, p in self.policy.named_parameters() if 'critic' not in n]
-        grads = torch.autograd.grad(loss, actor_params, retain_graph=retain_graph)
-        return torch.cat([g.view(-1) for g in grads])
-
-    def _get_dist(self, states_tuple: tuple[torch.Tensor, torch.Tensor]) -> torch.distributions.Categorical:
-        logits, _ = self.policy(states_tuple[0], states_tuple[1])
-        return torch.distributions.Categorical(logits=logits)
-
-    def _fisher_vector_product(self, states_tuple, old_dist, v) -> torch.Tensor:
-        actor_params = [p for n, p in self.policy.named_parameters() if 'critic' not in n]
-        kl = torch.distributions.kl_divergence(old_dist, self._get_dist(states_tuple)).mean()
-        grads = torch.autograd.grad(kl, actor_params, create_graph=True)
-        flat_grad_kl = torch.cat([g.view(-1) for g in grads])
-        kl_v = (flat_grad_kl * v).sum()
-        grads2 = torch.autograd.grad(kl_v, actor_params)
-        flat_grad2 = torch.cat([g.contiguous().view(-1) for g in grads2])
-        return flat_grad2 + self.cg_damping * v
-
-    def _conjugate_gradient(self, states_tuple, old_dist, b) -> torch.Tensor:
-        x = torch.zeros_like(b)
-        r = b.clone()
-        p = b.clone()
-        rdotr = torch.dot(r, r)
-        for _ in range(self.cg_iters):
-            avp = self._fisher_vector_product(states_tuple, old_dist, p)
-            alpha = rdotr / (torch.dot(p, avp) + 1e-8)
-            x += alpha * p
-            r -= alpha * avp
-            new_rdotr = torch.dot(r, r)
-            if new_rdotr < 1e-10:
-                break
-            beta = new_rdotr / (rdotr + 1e-8)
-            p = r + beta * p
-            rdotr = new_rdotr
-        return x
-
-    def _prepare_batch(self, batch_of_trajectories):
-        states_frames = []
-        states_actions = []
-        actions = []
-        returns = []
-
-        gamma = getattr(self.config, "GAMMA", 0.99)
-
-        for trajectory in batch_of_trajectories:
-            rewards = [step[2] for step in trajectory]
-            G = 0.0
-            discounted = []
-            for r in reversed(rewards):
-                G = r + gamma * G
-                discounted.insert(0, G)
-
-            for (state, action, _), ret in zip(trajectory, discounted):
-                states_frames.append(state["frames"])
-                states_actions.append(state["previous_actions"])
-                actions.append(action)
-                returns.append(ret)
-
-        states_np = np.stack(states_frames, axis=0)
-        s = torch.from_numpy(states_np).float() / 255.0
-        s = s.permute(0, 1, 4, 2, 3).contiguous()
-        n, f, c, h, w = s.shape
-        s = s.view(n, f * c, h, w).to(self.policy.device)
-        
-        s_act = torch.tensor(np.stack(states_actions, axis=0), dtype=torch.float32, device=self.policy.device)
-        actions_t = torch.tensor(actions, dtype=torch.long, device=self.policy.device)
-        returns_t = torch.tensor(returns, dtype=torch.float32, device=self.policy.device)
-
-        with torch.no_grad():
-            _, values = self.policy(s, s_act)
-            values = values.squeeze(-1)
-
-        advantages = returns_t - values
-        advantages = advantages / (advantages.std() + 1e-8)
-
-        return (s, s_act), actions_t, advantages, returns_t
-
-    def train_step(self, batch_of_trajectories) -> None:
-        if not batch_of_trajectories:
-            return
-
-        self.policy.train()
-        states_tuple, actions, advantages, returns_t = self._prepare_batch(batch_of_trajectories)
-
-        with torch.no_grad():
-            old_dist = self._get_dist(states_tuple)
-            old_log_probs = old_dist.log_prob(actions)
-
-        entropy_coef = getattr(self.config, 'ENTROPY_COEF', 0.0)
-
-        def surrogate_loss():
-            dist = self._get_dist(states_tuple)
-            log_probs = dist.log_prob(actions)
-            ratio = torch.exp(log_probs - old_log_probs)
-            # Add entropy bonus to objective
-            entropy = dist.entropy().mean()
-            return -(ratio * advantages).mean() - entropy_coef * entropy
-
-        loss = surrogate_loss()
-        loss_grad = self._flat_grad(loss)
-        step_direction = self._conjugate_gradient(states_tuple, old_dist, -loss_grad)
-
-        shs = 0.5 * (step_direction * self._fisher_vector_product(states_tuple, old_dist, step_direction)).sum()
-        shs = shs.abs() + 1e-8
-        step_size = torch.sqrt(self.max_kl / shs)
-        full_step = step_direction * step_size
-
-        old_params = self._flatten_params()
-
-        def set_and_eval(step: torch.Tensor):
-            new_params = old_params + step
-            self._set_flat_params(new_params)
-            with torch.no_grad():
-                dist = self._get_dist(states_tuple)
-                kl = torch.distributions.kl_divergence(old_dist, dist).mean()
-                new_loss = surrogate_loss()
-            return kl, new_loss
-
-        step = full_step
-        for _ in range(self.backtrack_iters):
-            kl, new_loss = set_and_eval(step)
-            if kl <= self.max_kl and new_loss < loss:
-                break
-            step = step * self.backtrack_coeff
-        else:
-            self._set_flat_params(old_params)
-
-        # Update Value Function Loop
-        for _ in range(5):
-            _, values = self.policy(states_tuple[0], states_tuple[1])
-            vf_loss = F.mse_loss(values.squeeze(-1), returns_t)
-            self.vf_optimizer.zero_grad()
-            vf_loss.backward()
-            self.vf_optimizer.step()
-
 
 # ==========================================
 #                   AGENT
@@ -624,7 +455,6 @@ class Agent:
     POLICIES = {
         "dummy": DummyPolicy,
         "cnn": CNNPolicy,
-        "cnn_actor_critic": CNNActorCriticPolicy
     }
     
     TRAINERS = {
@@ -632,7 +462,6 @@ class Agent:
         "reinforce": ReinforceTrainer,
         "reinforce_baseline": ReinforceBaselineTrainer,
         "trpo": TrpoTrainer,
-        "trpo_value": TrpoValueTrainer
     }
 
     def __init__(self, config: RLConfig):
