@@ -24,13 +24,34 @@ def set_seed(seed: int):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
+def silence_asyncio_errors():
+    import sys
+    import asyncio
+    if sys.platform == 'win32':
+        # Prevent "ValueError: I/O operation on closed pipe" during Ctrl+C on Windows
+        try:
+            from asyncio.proactor_events import _ProactorBasePipeTransport
+            def silence_del(self):
+                pass
+            _ProactorBasePipeTransport.__del__ = silence_del
+        except Exception:
+            pass
+
 def main():
+    env = None
+    agent = None
+    weights_path = None
+    json_path = None
+    episode_rewards = []
+    episode_coins = []
+    best_ma_reward = -float('inf')
+    
     parser = argparse.ArgumentParser(description="Training script for DODO RL agent.")
     parser.add_argument(
         "--policy",
         type=str,
-        choices=["dummy", "cnn"],
-        help="Policy type: 'dummy' or 'cnn'. If not set, RLConfig.POLICY_TYPE is used.",
+        choices=["dummy", "cnn", "cnn_actor_critic"],
+        help="Policy type: 'dummy', 'cnn', or 'cnn_actor_critic'. If not set, RLConfig.POLICY_TYPE is used.",
     )
     parser.add_argument(
         "--no-checkpoint",
@@ -50,15 +71,14 @@ def main():
     if args.no_checkpoint:
         config.LOAD_FROM_CHECKPOINT = False
 
+    silence_asyncio_errors()
+    
     env = GameSimEnvironment(config)
     agent = Agent(config)
     
     os.makedirs(config.WEIGHTS_DIR, exist_ok=True)
     weights_path = os.path.join(config.WEIGHTS_DIR, "weights.npy")
     json_path = os.path.join(config.WEIGHTS_DIR, "learning_data.json")
-    
-    episode_rewards = []
-    episode_coins = []
     
     if config.LOAD_FROM_CHECKPOINT:
         agent.load(weights_path)
@@ -67,7 +87,14 @@ def main():
                 data = json.load(f)
                 episode_rewards = data.get("rewards", [])
                 episode_coins = data.get("coins", [])
-            print(f"Loaded existing learning curve with {len(episode_rewards)} episodes.")
+                best_ma_reward = data.get("best_ma_reward", -float('inf'))
+                
+            if best_ma_reward == -float('inf') and len(episode_rewards) >= 10:
+                ma_rewards = moving_average(episode_rewards, n=10)
+                if len(ma_rewards) > 0:
+                    best_ma_reward = max(ma_rewards)
+                    
+            print(f"Loaded existing learning curve with {len(episode_rewards)} episodes. Historic Best MA Reward: {best_ma_reward:.3f}")
     else:
         print("Starting training from scratch.")
     
@@ -83,8 +110,6 @@ def main():
     time_horizon = config.TIME_HORIZON
     
     batch_of_trajectories = []
-    best_ma_reward = -float('inf')
-
     try:
         while episode_count < max_episodes:
             state, info = env.reset()
@@ -148,7 +173,7 @@ def main():
                     # Store only required experience tuple (without next_state and terminal_state)
                     experience = (state, action, reward)
                     trajectory.append(experience)
-                    
+
                     state = next_state
                     total_reward += reward
                     terminal_state = terminal_state or truncated
@@ -185,11 +210,20 @@ def main():
         print(f"\nTraining stopped due to error: {e}. Saving data ...")
     finally:
         # Guarantee save of weights and learning curve
-        agent.save(weights_path)
+        if agent and weights_path:
+            agent.save(weights_path)
         
-        with open(json_path, 'w') as f:
-            json.dump({"rewards": episode_rewards, "coins": episode_coins}, f)
-        print(f"Learning data saved to {json_path}")
+        if json_path:
+            with open(json_path, 'w') as f:
+                json.dump({"rewards": episode_rewards, "coins": episode_coins, "best_ma_reward": best_ma_reward}, f)
+            print(f"Learning data saved to {json_path}")
+        
+        # Save exact hyperparameter configs
+        config_dict = {k: getattr(config, k) for k in dir(config) if not k.startswith('_') and k.isupper()}
+        config_save_path = os.path.join(config.WEIGHTS_DIR, "config.json")
+        with open(config_save_path, 'w') as f:
+            json.dump(config_dict, f, indent=4)
+        print(f"Config saved to {config_save_path}")
         
         # Plotting
         if len(episode_rewards) > 0:
@@ -218,7 +252,14 @@ def main():
             plt.close()
             print("Plots saved to " + config.WEIGHTS_DIR)
             
-        env.close()
+        try:
+            if env:
+                env.close()
+        except Exception:
+            pass
+        finally:
+            # Hard exit to prevent background Playwright loop threads from hanging process termination
+            os._exit(0)
 
 if __name__ == "__main__":
     main()
