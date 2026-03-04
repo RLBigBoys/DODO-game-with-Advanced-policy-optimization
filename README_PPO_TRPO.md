@@ -10,14 +10,14 @@ A nominal TRPO iteration reads:
 $$
 \theta_{i+1} = \arg\max_{\theta}\ \hat{L}_{\theta_i}(\theta)
 \quad \text{subject to} \quad
-\bar{D}_{\mathrm{KL}}\left(\pi_{\theta_i}\ \|\ \pi_{\theta}\right) \le \delta .
+{D}_{\mathrm{KL}}\left(\pi_{\theta_i}\ \|\ \pi_{\theta}\right) \le \delta .
 $$
 
 where the (empirical) average KL is
 
 $$
-\bar{D}_{\mathrm{KL}}\left(\pi_{\theta_i}\ \|\ \pi_{\theta}\right)
-:= \mathbb{E}_{t}\!\left[
+{D}_{\mathrm{KL}}\left(\pi_{\theta_i}\ \|\ \pi_{\theta}\right)
+:= \mathbb{E}_{t}\left[
 D_{\mathrm{KL}}\left(\pi_{\theta_i}(\cdot \mid S_t)\ \|\ \pi_{\theta}(\cdot \mid S_t)\right)
 \right].
 $$
@@ -28,7 +28,7 @@ The practical TRPO surrogate is:
 
 $$
 \hat{L}_{\theta_i}(\theta)
-:= \mathbb{E}_{t}\!\left[
+:= \mathbb{E}_{t}\left[
 \frac{\pi_{\theta}(A_t \mid S_t)}{\pi_{\theta_i}(A_t \mid S_t)}\ \hat{A}_t
 \right],
 $$
@@ -64,7 +64,7 @@ The PPO clipped objective is:
 
 $$
 \hat{L}_{\mathrm{CLIP}}
-:= \mathbb{E}_{t}\!\left[
+:= \mathbb{E}_{t}\left[
 \min\left(
 r_t\,\hat{A}_t,\ \mathrm{clip}(r_t,1-\varepsilon,1+\varepsilon)\,\hat{A}_t
 \right)
