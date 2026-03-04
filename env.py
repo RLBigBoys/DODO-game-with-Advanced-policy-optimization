@@ -15,7 +15,7 @@ class GameSimEnvironment(gym.Env):
         super().__init__()
         self.config = config
         self.frame_buffer = deque(maxlen=config.FRAMES_STACK)
-        self.action_buffer = deque(maxlen=config.FRAMES_STACK - 1)
+        self.action_buffer = deque(maxlen=config.FRAMES_STACK)
         self.t = 0
         
         # Define action and observation spaces (Gymnasium)
@@ -25,7 +25,7 @@ class GameSimEnvironment(gym.Env):
         obs_shape = (config.FRAMES_STACK, config.FRAME_HEIGHT, config.FRAME_WIDTH, config.CHANNELS)
         self.observation_space = gym.spaces.Dict({
             "frames": gym.spaces.Box(low=0, high=255, shape=obs_shape, dtype=np.uint8),
-            "previous_actions": gym.spaces.Box(low=0, high=config.ACTION_SPACE_SIZE-1, shape=(config.FRAMES_STACK - 1,), dtype=np.float32)
+            "previous_actions": gym.spaces.Box(low=0, high=config.ACTION_SPACE_SIZE-1, shape=(config.FRAMES_STACK,), dtype=np.float32)
         })
         
         # Start Playwright
@@ -76,6 +76,10 @@ class GameSimEnvironment(gym.Env):
             # Decode bytes into numpy array (image)
             img_array = np.frombuffer(img_bytes, dtype=np.uint8)
             img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+
+            # Resize image to configured size
+            if img.shape[0] != self.config.FRAME_HEIGHT or img.shape[1] != self.config.FRAME_WIDTH:
+                img = cv2.resize(img, (self.config.FRAME_WIDTH, self.config.FRAME_HEIGHT), interpolation=cv2.INTER_AREA)
             
             # Convert to RGB if 3 channels, or to Grayscale (1 channel)
             if self.config.CHANNELS == 3:
@@ -159,7 +163,7 @@ class GameSimEnvironment(gym.Env):
         
         self.frame_buffer.clear()
         self.action_buffer.clear()
-        for _ in range(self.config.FRAMES_STACK - 1):
+        for _ in range(self.config.FRAMES_STACK):
             self.action_buffer.append(0)  # default no-click for pre-history
             
         for _ in range(self.config.FRAMES_STACK):
@@ -201,6 +205,9 @@ class GameSimEnvironment(gym.Env):
             ratio = drop_info.get("areaRatio", 0.0)
             reward += self.config.REWARD_PLACEMENT_MULTIPLIER * ratio
             reward += self.config.REWARD_COINS_MULTIPLIER * coins
+            
+        if terminal_state:
+            reward += getattr(self.config, 'PENALTY_GAME_OVER', 0.0)
             
         truncated = self.t >= self.config.TIME_HORIZON
         info = {"coins": coins}
@@ -294,17 +301,27 @@ class GameSimEnvironment(gym.Env):
         
     def close(self):
         """Close browser and stop Playwright."""
-        try:
+        import contextlib
+        import asyncio
+        
+        with contextlib.suppress(Exception):
+            if hasattr(self, 'context') and self.context:
+                self.context.close()
+                
+        with contextlib.suppress(Exception):
             if hasattr(self, 'browser') and self.browser:
                 self.browser.close()
-        except Exception:
-            pass
-            
-        try:
+                
+        with contextlib.suppress(Exception):
             if hasattr(self, 'playwright') and self.playwright:
                 self.playwright.stop()
-        except Exception:
-            pass
+                
+        # Hard terminate any dangling playwright async tasks
+        with contextlib.suppress(Exception):
+            loop = asyncio.get_event_loop()
+            if not loop.is_closed():
+                for pending_task in asyncio.all_tasks(loop):
+                    pending_task.cancel()
 
 def main():
     print("This module defines the environment. Use train.py or evaluate.py instead.")

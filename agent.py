@@ -75,14 +75,16 @@ class CNNPolicy(BasePolicy, nn.Module):
 
         conv_out_size = self._get_conv_out_shape(in_channels, config.FRAME_HEIGHT, config.FRAME_WIDTH)
 
-        num_past_actions = config.FRAMES_STACK - 1
+        num_past_actions = config.FRAMES_STACK
         self.action_fc = nn.Sequential(
-            nn.Linear(num_past_actions, 16),
+            nn.Linear(num_past_actions, 32),
+            nn.ReLU(),
+            nn.Linear(32, 32),
             nn.ReLU()
         )
 
         self.fc = nn.Sequential(
-            nn.Linear(conv_out_size + 16, 512),
+            nn.Linear(conv_out_size + 32, 512),
             nn.ReLU(),
             nn.Linear(512, config.ACTION_SPACE_SIZE),
         )
@@ -147,7 +149,6 @@ class CNNPolicy(BasePolicy, nn.Module):
         except Exception as e:
             print(f"Warning: Could not load weights from {filepath} ({e}). Starting fresh.")
 
-
 # ==========================================
 #                  TRAINERS
 # ==========================================
@@ -174,7 +175,10 @@ class ReinforceTrainer(BaseTrainer):
     def train_step(self, batch_of_trajectories) -> None:
         # trajectory[t] = (state, action, reward)
         self.optimizer.zero_grad()
-        batch_loss = []
+        
+        all_log_probs = []
+        all_returns = []
+        all_entropies = []
 
         for traj in batch_of_trajectories:
             states, actions, rewards = zip(*traj)
@@ -183,7 +187,7 @@ class ReinforceTrainer(BaseTrainer):
             prev_actions_list = [s["previous_actions"] for s in states]
             
             states_tensor = torch.as_tensor(np.array(frames_list), dtype=torch.float32)
-            states_tensor = states_tensor.permute(0, 1, 4, 2, 3).reshape(len(states), -1, 84, 84).to(self.policy.device)
+            states_tensor = states_tensor.permute(0, 1, 4, 2, 3).reshape(len(states), -1, self.config.FRAME_HEIGHT, self.config.FRAME_WIDTH).to(self.policy.device)
             
             prev_actions_tensor = torch.as_tensor(np.array(prev_actions_list), dtype=torch.float32).to(self.policy.device)
             actions_tensor = torch.as_tensor(actions, dtype=torch.int64).to(self.policy.device)
@@ -192,6 +196,7 @@ class ReinforceTrainer(BaseTrainer):
             distribution = torch.distributions.Categorical(logits=logits)
             
             log_probs = distribution.log_prob(actions_tensor) 
+            entropy = distribution.entropy()
 
             returns = []
             G = 0
@@ -199,12 +204,21 @@ class ReinforceTrainer(BaseTrainer):
                 G = r + self.config.GAMMA * G
                 returns.insert(0, G)
             
-            returns_tensor = torch.tensor(returns, dtype=torch.float32, device=self.policy.device)
-            
-            traj_loss = -(returns_tensor * log_probs).sum()
-            batch_loss.append(traj_loss)
+            all_log_probs.append(log_probs)
+            all_returns.extend(returns)
+            all_entropies.append(entropy)
 
-        total_loss = torch.stack(batch_loss).mean()
+        returns_tensor = torch.tensor(all_returns, dtype=torch.float32).to(self.policy.device)
+        returns_tensor = (returns_tensor - returns_tensor.mean()) / (returns_tensor.std() + 1e-8)
+        
+        log_probs_tensor = torch.cat(all_log_probs)
+        entropy_tensor = torch.cat(all_entropies)
+        
+        entropy_coef = getattr(self.config, "ENTROPY_COEF", 0.0)
+        policy_loss = -(returns_tensor * log_probs_tensor).mean()
+        entropy_loss = -entropy_coef * entropy_tensor.mean()
+
+        total_loss = policy_loss + entropy_loss
         total_loss.backward()
         self.optimizer.step()
  
@@ -218,7 +232,10 @@ class ReinforceBaselineTrainer(BaseTrainer):
     def train_step(self, batch_of_trajectories) -> None:
         # trajectory[t] = (state, action, reward)
         self.optimizer.zero_grad()
-        batch_loss = []
+        
+        all_log_probs = []
+        all_returns = []
+        all_entropies = []
 
         for traj in batch_of_trajectories:
             states, actions, rewards = zip(*traj)
@@ -227,7 +244,7 @@ class ReinforceBaselineTrainer(BaseTrainer):
             prev_actions_list = [s["previous_actions"] for s in states]
             
             states_tensor = torch.as_tensor(np.array(frames_list), dtype=torch.float32)
-            states_tensor = states_tensor.permute(0, 1, 4, 2, 3).reshape(len(states), -1, 84, 84).to(self.policy.device)
+            states_tensor = states_tensor.permute(0, 1, 4, 2, 3).reshape(len(states), -1, self.config.FRAME_HEIGHT, self.config.FRAME_WIDTH).to(self.policy.device)
             
             prev_actions_tensor = torch.as_tensor(np.array(prev_actions_list), dtype=torch.float32).to(self.policy.device)
             actions_tensor = torch.as_tensor(actions, dtype=torch.int64).to(self.policy.device)
@@ -236,6 +253,7 @@ class ReinforceBaselineTrainer(BaseTrainer):
             distribution = torch.distributions.Categorical(logits=logits)
             
             log_probs = distribution.log_prob(actions_tensor) 
+            entropy = distribution.entropy()
 
             returns = []
             G = 0
@@ -247,13 +265,24 @@ class ReinforceBaselineTrainer(BaseTrainer):
                 self.baseline = np.mean(returns)
             else:
                 self.baseline = 0.9 * self.baseline + 0.1 * np.mean(returns)
-            adv = returns - self.baseline
-            returns_tensor = torch.tensor(adv - self.baseline, dtype=torch.float32, device=self.policy.device)
             
-            traj_loss = -(returns_tensor * log_probs).sum()
-            batch_loss.append(traj_loss)
+            traj_returns = [r - self.baseline for r in returns]
+            
+            all_log_probs.append(log_probs)
+            all_returns.extend(traj_returns)
+            all_entropies.append(entropy)
 
-        total_loss = torch.stack(batch_loss).mean()
+        returns_tensor = torch.tensor(all_returns, dtype=torch.float32).to(self.policy.device)
+        returns_tensor = (returns_tensor - returns_tensor.mean()) / (returns_tensor.std() + 1e-8)
+        
+        log_probs_tensor = torch.cat(all_log_probs)
+        entropy_tensor = torch.cat(all_entropies)
+
+        entropy_coef = getattr(self.config, "ENTROPY_COEF", 0.0)
+        policy_loss = -(returns_tensor * log_probs_tensor).mean()
+        entropy_loss = -entropy_coef * entropy_tensor.mean()
+
+        total_loss = policy_loss + entropy_loss
         total_loss.backward()
         self.optimizer.step()
  

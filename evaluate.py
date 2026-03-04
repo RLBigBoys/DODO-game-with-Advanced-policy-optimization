@@ -14,7 +14,10 @@ def main():
     env = GameSimEnvironment(config)
     agent = Agent(config)
     
-    weights_path = os.path.join(config.WEIGHTS_DIR, "weights.npy")
+    if config.LOAD_BEST_WEIGHTS:
+        weights_path = os.path.join(config.WEIGHTS_DIR, "weights_best.npy")
+    else:
+        weights_path = os.path.join(config.WEIGHTS_DIR, "weights.npy")
     agent.load(weights_path)
     
     num_episodes = 5
