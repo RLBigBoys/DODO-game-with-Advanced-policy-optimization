@@ -446,6 +446,104 @@ class TrpoTrainer(BaseTrainer):
             self._set_flat_params(old_params)
 
 
+class PpoTrainer(BaseTrainer):
+    def __init__(self, policy: BasePolicy, config: RLConfig):
+        super().__init__(policy, config)
+        if not isinstance(self.policy, CNNPolicy):
+            raise ValueError("PpoTrainer expects policy of type CNNPolicy.")
+
+        self.clip_eps = float(getattr(self.config, "PPO_CLIP_EPS", 0.2))
+        self.epochs = int(getattr(self.config, "PPO_EPOCHS", 4))
+        self.minibatch_size = int(getattr(self.config, "PPO_MINIBATCH_SIZE", 256))
+        self.entropy_coef = float(getattr(self.config, "PPO_ENTROPY_COEF", 0.01))
+        self.max_grad_norm = float(getattr(self.config, "PPO_MAX_GRAD_NORM", 0.5))
+
+        lr = float(getattr(self.config, "PPO_LR", getattr(self.config, "LEARNING_RATE", 1e-4)))
+        self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=lr)
+
+    def _get_dist(self, states_tuple: tuple[torch.Tensor, torch.Tensor]) -> torch.distributions.Categorical:
+        logits = self.policy(states_tuple[0], states_tuple[1])
+        return torch.distributions.Categorical(logits=logits)
+
+    def _prepare_batch(self, batch_of_trajectories):
+        states_frames = []
+        states_actions = []
+        actions = []
+        returns = []
+
+        gamma = getattr(self.config, "GAMMA", 0.99)
+
+        for trajectory in batch_of_trajectories:
+            rewards = [step[2] for step in trajectory]
+            G = 0.0
+            discounted = []
+            for r in reversed(rewards):
+                G = r + gamma * G
+                discounted.insert(0, G)
+
+            for (state, action, _), ret in zip(trajectory, discounted):
+                states_frames.append(state["frames"])
+                states_actions.append(state["previous_actions"])
+                actions.append(action)
+                returns.append(ret)
+
+        states_np = np.stack(states_frames, axis=0)
+        s = torch.from_numpy(states_np).float() / 255.0
+        s = s.permute(0, 1, 4, 2, 3).contiguous()
+        n, f, c, h, w = s.shape
+        s = s.view(n, f * c, h, w).to(self.policy.device)
+
+        s_act = torch.tensor(np.stack(states_actions, axis=0), dtype=torch.float32, device=self.policy.device)
+        actions_t = torch.tensor(actions, dtype=torch.long, device=self.policy.device)
+
+        returns_t = torch.tensor(returns, dtype=torch.float32, device=self.policy.device)
+        advantages = returns_t - returns_t.mean()
+        advantages = advantages / (advantages.std() + 1e-8)
+
+        return (s, s_act), actions_t, advantages
+
+    def train_step(self, batch_of_trajectories) -> None:
+        if not batch_of_trajectories:
+            return
+
+        self.policy.train()
+
+        states_tuple, actions, advantages = self._prepare_batch(batch_of_trajectories)
+
+        with torch.no_grad():
+            old_dist = self._get_dist(states_tuple)
+            old_log_probs = old_dist.log_prob(actions)
+
+        n = actions.shape[0]
+        if n == 0:
+            return
+
+        for _ in range(self.epochs):
+            perm = torch.randperm(n, device=self.policy.device)
+            for start in range(0, n, self.minibatch_size):
+                idx = perm[start : start + self.minibatch_size]
+
+                mb_states = (states_tuple[0][idx], states_tuple[1][idx])
+                mb_actions = actions[idx]
+                mb_adv = advantages[idx]
+                mb_old_logp = old_log_probs[idx]
+
+                dist = self._get_dist(mb_states)
+                logp = dist.log_prob(mb_actions)
+                ratio = torch.exp(logp - mb_old_logp)
+
+                clipped_ratio = torch.clamp(ratio, 1.0 - self.clip_eps, 1.0 + self.clip_eps)
+                policy_loss = -torch.min(ratio * mb_adv, clipped_ratio * mb_adv).mean()
+
+                entropy = dist.entropy().mean()
+                loss = policy_loss - self.entropy_coef * entropy
+
+                self.optimizer.zero_grad()
+                loss.backward()
+                if self.max_grad_norm > 0:
+                    torch.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
+                self.optimizer.step()
+
 
 # ==========================================
 #                   AGENT
@@ -454,7 +552,7 @@ class TrpoTrainer(BaseTrainer):
 class Agent:
     POLICIES = {
         "dummy": DummyPolicy,
-        "cnn": CNNPolicy,
+        "cnn": CNNPolicy
     }
     
     TRAINERS = {
@@ -462,6 +560,7 @@ class Agent:
         "reinforce": ReinforceTrainer,
         "reinforce_baseline": ReinforceBaselineTrainer,
         "trpo": TrpoTrainer,
+        "ppo": PpoTrainer,
     }
 
     def __init__(self, config: RLConfig):

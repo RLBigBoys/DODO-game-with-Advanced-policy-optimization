@@ -60,7 +60,7 @@ The reward function is an event-driven mapping that provides gradients for the p
 ## 3. History of Agent Evolution
 
 Our development architecture went through the following iterations to stabilize learning:
-1. **Iteration 0**: CNN Policy evaluated via REINFORCE, REINFORCE with Baseline, and finally TRPO. Initial state representation relied solely on the previous 5 visual frames.
+1. **Iteration 0**: CNN Policy evaluated via REINFORCE, REINFORCE with Baseline, TRPO, PPO. Initial state representation relied solely on the previous 5 visual frames.
 2. **Iteration 1**: Added the simplest dense reward of `+0.001` per step for time spent surviving in the game.
 3. **Iteration 2**: Introduced sparse conditional rewards correlating with the collection of ingame DODO Coins.
 4. **Iteration 3**: Implemented block-precision placement rewards heavily punishing overhangs based on the ratio between the new resulting surface area and the previous old area.
@@ -128,11 +128,9 @@ $$ \text{Loss}_{policy} = - \left( \frac{1}{N} \sum_{k=1}^N \sum_{t=0}^{\tau_k-1
 
 **Learning Curve (Cumulative Reward & Coins):**
 
-**[PLACEHOLDER: Insert `learning_curve_reinforce.png` here]**
+![alt text](weights_dir_cnn_reinforce/learning_curve_reward.png)
 
-**Qualitative Demonstration:**
-
-**[PLACEHOLDER: Insert REINFORCE Evaluation Gameplay.gif here]**
+![alt text](weights_dir_cnn_reinforce/learning_curve_dodo_coins.png)
 
 ### 5.2. REINFORCE with Baseline
 
@@ -152,12 +150,106 @@ Before backpropagation, these advantages are structurally standardized (identica
 
 **Learning Curve (Cumulative Reward & Coins):**
 
-**[PLACEHOLDER: Insert `learning_curve_reinforce_baseline.png` here]**
+![alt text](weights_dir_cnn_reinforce_baseline/learning_curve_reward.png)
+
+![alt text](weights_dir_cnn_reinforce_baseline/learning_curve_dodo_coins.png)
+
+## 5.3. TRPO (Trust Region Policy Optimization)
+
+Let $\pi_{\theta_i}$ denote the behavior (old) policy that generated the batch, and let $\pi_{\theta}$ be the updated policy.  
+TRPO performs a careful policy update by maximizing a surrogate objective under a trust region constraint.
+
+### Nominal TRPO
+
+A nominal TRPO iteration reads:
+
+$$
+\theta_{i+1} = \arg\max_{\theta}\ \hat{L}_{\theta_i}(\theta)
+\quad \text{subject to} \quad
+\bar{D}_{\mathrm{KL}}\left(\pi_{\theta_i}\ \|\ \pi_{\theta}\right) \le \delta .
+$$
+
+### Practical surrogate (importance sampling)
+
+The practical TRPO surrogate is:
+
+$$
+\hat{L}_{\theta_i}(\theta)
+:= \mathbb{E}_{t}\left[
+\frac{\pi_{\theta}(A_t \mid S_t)}{\pi_{\theta_i}(A_t \mid S_t)}\ \hat{A}_t
+\right],
+$$
+
+where $\hat{A}_t$ is an advantage estimate computed from the batch (standardized in our implementation).
+
+### How it is solved in our code
+
+In `agent.py`, TRPO is implemented for a categorical policy (discrete actions) using:
+- the surrogate loss with ratio $r_t=\exp(\log \pi_{\theta}(A_t \mid S_t)-\log \pi_{\theta_i}(A_t \mid S_t))$;
+- Fisher-vector product based on the mean KL divergence;
+- **Conjugate Gradient** to compute the step direction;
+- step rescaling to satisfy the KL budget (`max_kl`);
+- **backtracking line search** until KL is within the trust region and the surrogate improves.
+
+Default TRPO constants in our implementation: `max_kl=1e-2`, `cg_damping=1e-2`, `cg_iters=10`, `backtrack_coeff=0.8`, `backtrack_iters=10`.
+
+
+### Learning Curve (Cumulative Reward & Coins):
+
+![alt text](weights_dir_cnn_trpo/learning_curve_reward.png)
+
+![alt text](weights_dir_cnn_trpo/learning_curve_dodo_coins.png)
+
+## 5.4. PPO (Proximal Policy Optimization)
+
+PPO is a practical variant of TRPO that replaces explicit KL constraints with a clipped surrogate objective.
+
+Let $\pi_{\text{old}}$ be the behavior policy that generated the batch and $\pi_{\text{new}}$ be the updated policy.  
+Define the policy ratio:
+
+$$
+r_t := \frac{\pi_{\text{new}}(A_t \mid S_t)}{\pi_{\text{old}}(A_t \mid S_t)} .
+$$
+
+### PPO clipped surrogate
+
+The PPO clipped objective is:
+
+$$
+\hat{L}_{\mathrm{CLIP}}
+:= \mathbb{E}_{t}\left[
+\min\left(
+r_t\,\hat{A}_t,\ \mathrm{clip}(r_t,1-\varepsilon,1+\varepsilon)\,\hat{A}_t
+\right)
+\right].
+$$
+
+### How it is implemented in our code
+
+In `agent.py`, PPO:
+- stores $\log \pi_{\text{old}}(A_t \mid S_t)$ from the rollout and recomputes $\log \pi_{\text{new}}(A_t \mid S_t)$ during updates;
+- forms the ratio via `ratio = exp(logp_new - logp_old)` and applies clipping with `PPO_CLIP_EPS`;
+- performs multiple epochs over the same batch (`PPO_EPOCHS`) with minibatches (`PPO_MINIBATCH_SIZE`);
+- optionally adds entropy bonus (`PPO_ENTROPY_COEF`) and uses gradient clipping (`PPO_MAX_GRAD_NORM`).
+
+All PPO hyperparameters are set in `rl_config.py`.
+
+### Learning Curve (Cumulative Reward & Coins):
+
+![alt text](weights_dir_cnn_ppo/learning_curve_reward.png)
+
+![alt text](weights_dir_cnn_ppo/learning_curve_dodo_coins.png)
 
 **Qualitative Demonstration:**
 
-**[PLACEHOLDER: Insert REINFORCE Baseline Evaluation Gameplay.gif here]**
+![alt text](assets/AGENT_BEST_GAME.gif)
 
-### 5.3. Analysis of Results
+### 6. Analysis of Results
 
-**[PLACEHOLDER: Insert detailed comparative analysis of REINFORCE and REINFORCE Baseline performance relative to the naive baseline here]**
+Based on the empirical evaluations and learning curves across the implemented algorithms, several key conclusions can be drawn:
+
+1. **Dominance of PPO:** The results clearly indicate that Proximal Policy Optimization (PPO) performs the best for this simulation. Its clipped surrogate objective allowed for stable, monotonic policy improvements without the crippling variance observed in REINFORCE, and it executed much easier and more efficiently compared to the complex Fisher-vector product computations required by TRPO.
+2. **Crucial Role of the Entropy Bonus:** We observed that adding a categorical entropy bonus to the policy loss is sometimes the only mechanism that "saves" the entire training process. Without it, the agent's policy would frequently collapse prematurely into suboptimal deterministic behaviors (e.g., never clicking to avoid the game-over penalty), trapping the model in local minima early in training.
+3. **Importance of Past Action History:** The environment demonstrated that there are specific tasks where providing the agent's actions from previous time steps ($S_{act}$) is crucial. In highly timing-dependent tracking challenges, visual frames alone may omit subtle kinetic context due to framerate latency; embedding the consecutive history of the last $N$ actions provides the agent with an explicit short-term proprioceptive memory, drastically improving its placement precision and decision-making over time.
+
+
