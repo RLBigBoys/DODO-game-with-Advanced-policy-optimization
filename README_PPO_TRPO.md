@@ -10,15 +10,15 @@ A nominal TRPO iteration reads:
 $$
 \theta_{i+1} = \arg\max_{\theta}\ \hat{L}_{\theta_i}(\theta)
 \quad \text{subject to} \quad
-\bar{D}_{\mathrm{KL}}\!\left(\pi_{\theta_i}\ \|\ \pi_{\theta}\right) \le \delta .
+\bar{D}_{\mathrm{KL}}\left(\pi_{\theta_i}\ \|\ \pi_{\theta}\right) \le \delta .
 $$
 
 where the (empirical) average KL is
 
 $$
-\bar{D}_{\mathrm{KL}}\!\left(\pi_{\theta_i}\ \|\ \pi_{\theta}\right)
+\bar{D}_{\mathrm{KL}}\left(\pi_{\theta_i}\ \|\ \pi_{\theta}\right)
 := \mathbb{E}_{t}\!\left[
-D_{\mathrm{KL}}\!\left(\pi_{\theta_i}(\cdot \mid S_t)\ \|\ \pi_{\theta}(\cdot \mid S_t)\right)
+D_{\mathrm{KL}}\left(\pi_{\theta_i}(\cdot \mid S_t)\ \|\ \pi_{\theta}(\cdot \mid S_t)\right)
 \right].
 $$
 
