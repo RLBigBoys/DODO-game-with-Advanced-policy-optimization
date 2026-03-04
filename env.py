@@ -109,6 +109,8 @@ class GameSimEnvironment(gym.Env):
                 # Convert color back to BGR for correct saving in OpenCV
                 if self.config.CHANNELS == 3:
                     frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                elif self.config.CHANNELS == 1 and frame.ndim == 3 and frame.shape[-1] == 1:
+                    frame = frame[:, :, 0]
                 filename = os.path.join(self.config.DEBUG_DIR, f"frame_{i}.png")
                 cv2.imwrite(filename, frame)
                                  

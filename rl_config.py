@@ -25,7 +25,7 @@ class RLConfig:
     # Policy type: "dummy", "cnn"
     POLICY_TYPE = "cnn"
     
-    # Выбор метода обучения: "dummy", "reinforce", "reinforce_baseline", "trpo"
+    # Выбор метода обучения: "dummy", "reinforce", "reinforce_baseline", "trpo", "ppo"
     TRAIN_METHOD = "ppo"
     
     # ── Dummy Policy ──
@@ -36,6 +36,14 @@ class RLConfig:
     LEARNING_RATE = 1e-4
     GAMMA = 0.99
     TRAJECTORIES_PER_BATCH = 10
+
+    # ── PPO Hyperparameters ──
+    PPO_LR = 1e-4
+    PPO_CLIP_EPS = 0.2
+    PPO_EPOCHS = 4
+    PPO_MINIBATCH_SIZE = 256
+    PPO_ENTROPY_COEF = 0.01
+    PPO_MAX_GRAD_NORM = 0.5
     ENTROPY_COEF = 0.01
     
     # ── Saving & Loading ──
