@@ -6,28 +6,29 @@ TRPO performs a careful policy update by maximizing a surrogate objective under 
 ### Nominal TRPO
 
 A nominal TRPO iteration reads:
-$$
+$
 \theta_{i+1} = \arg\max_{\theta}\ \hat{L}_{\theta_i}(\theta)
 \quad \text{subject to} \quad
 \bar{D}_{\mathrm{KL}}\!\left(\pi_{\theta_i}\ \|\ \pi_{\theta}\right) \le \delta,
-$$
+$
+
 where the (empirical) average KL is
-$$
+$
 \bar{D}_{\mathrm{KL}}\!\left(\pi_{\theta_i}\ \|\ \pi_{\theta}\right)
 := \mathbb{E}_{t}\!\left[
 D_{\mathrm{KL}}\!\left(\pi_{\theta_i}(\cdot\mid S_t)\ \|\ \pi_{\theta}(\cdot\mid S_t)\right)
 \right].
-$$
+$
 
 ### Practical surrogate (importance sampling)
 
 The practical TRPO surrogate is:
-$$
+$
 \hat{L}_{\theta_i}(\theta)
 := \mathbb{E}_{t}\!\left[
 \frac{\pi_{\theta}(A_t\mid S_t)}{\pi_{\theta_i}(A_t\mid S_t)}\ \hat{A}_t
 \right],
-$$
+$
 where $\hat{A}_t$ is an advantage estimate computed from the batch (standardized in our implementation).
 
 ### How it is solved in our code
@@ -48,21 +49,21 @@ PPO is a practical variant of TRPO that replaces explicit KL constraints with a 
 
 Let $\pi_{\text{old}}$ be the behavior policy that generated the batch and $\pi_{\text{new}}$ be the updated policy.
 Define the policy ratio:
-$$
+$
 r_t := \frac{\pi_{\text{new}}(A_t\mid S_t)}{\pi_{\text{old}}(A_t\mid S_t)}.
-$$
+$
 
 ### PPO clipped surrogate
 
 The PPO clipped objective is:
-$$
+$
 \hat{L}_{\mathrm{CLIP}}
 := \mathbb{E}_{t}\!\left[
 \min\left(
 r_t\,\hat{A}_t,\ \mathrm{clip}(r_t,1-\varepsilon,1+\varepsilon)\,\hat{A}_t
 \right)
 \right].
-$$
+$
 
 ### How it is implemented in our code
 
