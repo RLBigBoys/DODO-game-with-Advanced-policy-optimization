@@ -108,23 +108,40 @@ During training, the script outputs the exact progression of steps and rewards t
 ### 5.1. REINFORCE
 
 In the REINFORCE algorithm, we directly optimize the policy $\pi$ via a parametrized model $\pi^\theta$ with weights $\theta$. We want to solve an optimal control problem of a Markov Decision Process (MDP) by explicitly maximizing the expected trajectory return:
-$$ v^\pi(s) := \mathbb{E} \left[ \sum_{t=0}^{\tau-1} \gamma^t R_t \mid S_0 = s \right] \to \max_{\pi}, s \in \mathcal{S} $$
+
+```math
+ v^\pi(s) := \mathbb{E} \left[ \sum_{t=0}^{\tau-1} \gamma^t R_t \mid S_0 = s \right] \to \max_{\pi}, s \in \mathcal{S}
+```
 
 With the state-action trajectory defined as $z_t := (s_t, a_t)$, the simplest form of the iterative gradient update rule from iteration $i \in \mathbb{Z}_{\ge 0}$ evaluated for $\tau$ steps follows:
-$$ \theta_{i+1} \leftarrow \theta_i + \alpha \sum_{t=0}^{\tau-1} \gamma^t r_t^i \cdot \sum_{t=0}^{\tau-1} \nabla_\theta \ln \pi^\theta (a_t^i \mid s_t^i) $$
+
+```math
+\theta_{i+1} \leftarrow \theta_i + \alpha \sum_{t=0}^{\tau-1} \gamma^t r_t^i \cdot \sum_{t=0}^{\tau-1} \nabla_\theta \ln \pi^\theta (a_t^i \mid s_t^i) 
+```
 
 In practice, we estimate this via a batch of sampled episodes. The empirical policy-gradient estimator $\hat{g}$ over a batch of $N$ trajectories becomes:
-$$ \hat{g} = \frac{1}{N} \sum_{k=1}^N \left( G(\tau^{(k)}) \right) \sum_{t=0}^{\tau_k-1} \nabla_\theta \ln \pi^\theta(a_t^{(k)} \mid s_t^{(k)}) $$
+
+```math
+\hat{g} = \frac{1}{N} \sum_{k=1}^N \left( G(\tau^{(k)}) \right) \sum_{t=0}^{\tau_k-1} \nabla_\theta \ln \pi^\theta(a_t^{(k)} \mid s_t^{(k)}) 
+```
 
 And the update rule is structured via gradient ascent:
-$$ \theta \leftarrow \theta + \alpha \hat{g} $$
+
+```math
+\theta \leftarrow \theta + \alpha \hat{g} 
+```
 
 However, in our evolved execution (Iteration 5), we heavily stabilize the variance of this scalar magnitude via **Advantage Standardization**. Before the gradient evaluates, the individual empirical step returns $G_t^{(k)} = \sum_{t'=t}^{\tau_k-1} \gamma^{t'-t} r_{t'}^{(k)}$ are uniformly standardized against the whole batch to form an advantage-like proxy term:
-$$ \hat{A}_t^{(k)} = \frac{G_t^{(k)} - \mu_G}{\sigma_G + \epsilon} $$
+
+```math
+\hat{A}_t^{(k)} = \frac{G_t^{(k)} - \mu_G}{\sigma_G + \epsilon} 
+```
 
 To dramatically encourage exploration during the early random-weight stages of training, a Categorical Entropy bonus $\mathcal{H}$ is appended to the policy loss computation using a scaling coefficient $c$. The true final empirical formula processed in our code follows:
 
-$$ \text{Loss}_{policy} = - \left( \frac{1}{N} \sum_{k=1}^N \sum_{t=0}^{\tau_k-1} \hat{A}_t^{(k)} \cdot \ln \pi^\theta(a_t^{(k)} \mid s_t^{(k)}) \right) - c \cdot \frac{1}{N} \sum_{k=1}^N \sum_{t=0}^{\tau_k-1} \mathcal{H}(\pi^\theta(\bullet \mid s_t^{(k)})) $$
+```math
+\text{Loss}_{policy} = - \left( \frac{1}{N} \sum_{k=1}^N \sum_{t=0}^{\tau_k-1} \hat{A}_t^{(k)} \cdot \ln \pi^\theta(a_t^{(k)} \mid s_t^{(k)}) \right) - c \cdot \frac{1}{N} \sum_{k=1}^N \sum_{t=0}^{\tau_k-1} \mathcal{H}(\pi^\theta(\bullet \mid s_t^{(k)})) 
+```
 
 **Learning Curve (Cumulative Reward & Coins):**
 
@@ -136,15 +153,23 @@ $$ \text{Loss}_{policy} = - \left( \frac{1}{N} \sum_{k=1}^N \sum_{t=0}^{\tau_k-1
 
 In REINFORCE, we introduce specific control variates to drastically reduce scalar variance in the sample mean. This is known as the baseline mechanism in policy gradient. A baseline $B_t$ is introduced into the expectation like:
 
-$$ \mathbb{E}_{\pi^\theta} \left[ \sum_{t=0}^{\tau-1} \nabla_\theta \ln \pi^\theta(A_t \mid S_t) \cdot \left( \sum_{k=t}^{\tau-1} \gamma^k R_k - B_t \right) \right] $$
+```math 
+\mathbb{E}_{\pi^\theta} \left[ \sum_{t=0}^{\tau-1} \nabla_\theta \ln \pi^\theta(A_t \mid S_t) \cdot \left( \sum_{k=t}^{\tau-1} \gamma^k R_k - B_t \right) \right] 
+```
 
 The requirement on the baseline is that it must be independent of $A_t$ conditioned on $S_t$. Conditional independence allows to factor out $\mathbb{E}[B_t \mid S_t]$ from the inner expectation, whereas the other, remaining, expectation is zero by the token $\int \nabla_\theta \pi^\theta = \nabla_\theta (\int \pi^\theta) = \nabla_\theta (1) = 0$ as in the "don't let the past distract you" trick.
 
 In direct implementation within `agent.py`, rather than utilizing a value estimate Actor-Critic representation $\hat{v}(S_t)$, the baseline $b$ is computed uniformly across the batch using a dynamic Exponential Moving Average (EMA) of explicit step returns to iteratively track the expected aggregate rewards. For an incoming batch of $N$ trajectories, the baseline updates as follows:
-$$ b \leftarrow 0.9 b + 0.1 \left( \frac{1}{N} \sum_{k=1}^N \frac{1}{\tau_k} \sum_{t=0}^{\tau_k-1} G_t^{(k)} \right) $$
+
+```math
+b \leftarrow 0.9 b + 0.1 \left( \frac{1}{N} \sum_{k=1}^N \frac{1}{\tau_k} \sum_{t=0}^{\tau_k-1} G_t^{(k)} \right) 
+```
 
 Our code uniformly subtracts this moving scalar from all batch returns explicitly via a centered difference $A_t^{(k)} = G_t^{(k)} - b$. The resulting policy-gradient estimator becomes:
-$$ \hat{g} = \frac{1}{N} \sum_{k=1}^N \sum_{t=0}^{\tau_k-1} \left( G_t^{(k)} - b \right) \nabla_\theta \ln \pi^\theta(a_t^{(k)} \mid s_t^{(k)}) $$
+
+```math
+\hat{g} = \frac{1}{N} \sum_{k=1}^N \sum_{t=0}^{\tau_k-1} \left( G_t^{(k)} - b \right) \nabla_\theta \ln \pi^\theta(a_t^{(k)} \mid s_t^{(k)}) 
+```
 
 Before backpropagation, these advantages are structurally standardized (identically to Iteration 5's naive REINFORCE formulation) and uniformly subtracted by the exact Categorical Entropy modifier to optimize policy loss $\mathcal{L}_{policy}$.
 
@@ -163,22 +188,24 @@ TRPO performs a careful policy update by maximizing a surrogate objective under 
 
 A nominal TRPO iteration reads:
 
-$$
+```math
 \theta_{i+1} = \arg\max_{\theta}\ \hat{L}_{\theta_i}(\theta)
 \quad \text{subject to} \quad
 \bar{D}_{\mathrm{KL}}\left(\pi_{\theta_i}\ \|\ \pi_{\theta}\right) \le \delta .
-$$
+
+```
 
 ### Practical surrogate (importance sampling)
 
 The practical TRPO surrogate is:
 
-$$
+```math
 \hat{L}_{\theta_i}(\theta)
 := \mathbb{E}_{t}\left[
 \frac{\pi_{\theta}(A_t \mid S_t)}{\pi_{\theta_i}(A_t \mid S_t)}\ \hat{A}_t
 \right],
-$$
+
+```
 
 where $\hat{A}_t$ is an advantage estimate computed from the batch (standardized in our implementation).
 
@@ -207,22 +234,26 @@ PPO is a practical variant of TRPO that replaces explicit KL constraints with a 
 Let $\pi_{\text{old}}$ be the behavior policy that generated the batch and $\pi_{\text{new}}$ be the updated policy.  
 Define the policy ratio:
 
-$$
+
+```math
 r_t := \frac{\pi_{\text{new}}(A_t \mid S_t)}{\pi_{\text{old}}(A_t \mid S_t)} .
-$$
+
+```
 
 ### PPO clipped surrogate
 
 The PPO clipped objective is:
 
-$$
+
+```math
 \hat{L}_{\mathrm{CLIP}}
 := \mathbb{E}_{t}\left[
 \min\left(
 r_t\,\hat{A}_t,\ \mathrm{clip}(r_t,1-\varepsilon,1+\varepsilon)\,\hat{A}_t
 \right)
 \right].
-$$
+
+```
 
 ### How it is implemented in our code
 
@@ -251,5 +282,3 @@ Based on the empirical evaluations and learning curves across the implemented al
 1. **Dominance of PPO:** The results clearly indicate that Proximal Policy Optimization (PPO) performs the best for this simulation. Its clipped surrogate objective allowed for stable, monotonic policy improvements without the crippling variance observed in REINFORCE, and it executed much easier and more efficiently compared to the complex Fisher-vector product computations required by TRPO.
 2. **Crucial Role of the Entropy Bonus:** We observed that adding a categorical entropy bonus to the policy loss is sometimes the only mechanism that "saves" the entire training process. Without it, the agent's policy would frequently collapse prematurely into suboptimal deterministic behaviors (e.g., never clicking to avoid the game-over penalty), trapping the model in local minima early in training.
 3. **Importance of Past Action History:** The environment demonstrated that there are specific tasks where providing the agent's actions from previous time steps ($S_{act}$) is crucial. In highly timing-dependent tracking challenges, visual frames alone may omit subtle kinetic context due to framerate latency; embedding the consecutive history of the last $N$ actions provides the agent with an explicit short-term proprioceptive memory, drastically improving its placement precision and decision-making over time.
-
-
